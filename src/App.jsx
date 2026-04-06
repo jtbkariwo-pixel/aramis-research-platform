@@ -7,7 +7,7 @@ const LOGO_VERT_CORP = "data:image/png;base64,/9j/4AAQSkZJRgABAQAAAQABAAD/4gHYSU
 // ─── FMP API LAYER ─────────────────────────────────────────────────────────────
 // Replace "demo" with your FMP API key once you receive it
 // Get your free key at: https://financialmodelingprep.com/register
-const FMP_API_KEY = "demo";
+const FMP_API_KEY = "rGc2qRoAlMqsUrJnOzkesp4U6qppd63a";
 const FMP_BASE    = "https://financialmodelingprep.com";
 
 // Rate limiter — free tier: 250 calls/day, ~10/min safe
