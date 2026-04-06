@@ -40,55 +40,55 @@ async function fetchProfile(ticker) {
 
 // ── Key metrics (ROIC, EV/EBITDA, P/E etc) ──
 async function fetchKeyMetrics(ticker) {
-  const data = await fmpFetch(`/v3/key-metrics/${ticker}`, { limit: 5, period: "annual" });
+  const data = await fmpFetch(`/stable/key-metrics?symbol=${ticker}`, { limit: 5, period: "annual" });
   return Array.isArray(data) ? data[0] : null;
 }
 
 // ── Financial ratios ──
 async function fetchRatios(ticker) {
-  const data = await fmpFetch(`/v3/ratios/${ticker}`, { limit: 5, period: "annual" });
+  const data = await fmpFetch(`/stable/ratios?symbol=${ticker}`, { limit: 5, period: "annual" });
   return Array.isArray(data) ? data[0] : null;
 }
 
 // ── Income statement ──
 async function fetchIncome(ticker) {
-  const data = await fmpFetch(`/v3/income-statement/${ticker}`, { limit: 5, period: "annual" });
+  const data = await fmpFetch(`/stable/income-statement?symbol=${ticker}`, { limit: 5, period: "annual" });
   return Array.isArray(data) ? data : [];
 }
 
 // ── Balance sheet ──
 async function fetchBalanceSheet(ticker) {
-  const data = await fmpFetch(`/v3/balance-sheet-statement/${ticker}`, { limit: 3, period: "annual" });
+  const data = await fmpFetch(`/stable/balance-sheet-statement?symbol=${ticker}`, { limit: 3, period: "annual" });
   return Array.isArray(data) ? data[0] : null;
 }
 
 // ── Cash flow ──
 async function fetchCashFlow(ticker) {
-  const data = await fmpFetch(`/v3/cash-flow-statement/${ticker}`, { limit: 3, period: "annual" });
+  const data = await fmpFetch(`/stable/cash-flow-statement?symbol=${ticker}`, { limit: 3, period: "annual" });
   return Array.isArray(data) ? data[0] : null;
 }
 
 // ── Real-time quote ──
 async function fetchQuote(ticker) {
-  const data = await fmpFetch(`/v3/quote/${ticker}`);
+  const data = await fmpFetch(`/stable/quote?symbol=${ticker}`);
   return Array.isArray(data) ? data[0] : null;
 }
 
 // ── DCF valuation ──
 async function fetchDCF(ticker) {
-  const data = await fmpFetch(`/v3/discounted-cash-flow/${ticker}`);
+  const data = await fmpFetch(`/stable/discounted-cash-flow?symbol=${ticker}`);
   return Array.isArray(data) ? data[0] : (data || null);
 }
 
 // ── Analyst estimates ──
 async function fetchEstimates(ticker) {
-  const data = await fmpFetch(`/v3/analyst-estimates/${ticker}`, { limit: 2 });
+  const data = await fmpFetch(`/stable/analyst-estimates?symbol=${ticker}`, { limit: 2 });
   return Array.isArray(data) ? data[0] : null;
 }
 
 // ── Company news ──
 async function fetchNews(ticker) {
-  const data = await fmpFetch(`/v3/stock_news`, { tickers: ticker, limit: 5 });
+  const data = await fmpFetch(`/stable/stock-news`, { tickers: ticker, limit: 5 });
   return Array.isArray(data) ? data : [];
 }
 
