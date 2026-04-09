@@ -22,7 +22,15 @@ async function fmpFetch(endpoint, params = {}) {
   lastCall = Date.now();
   const res = await fetch(url);
   if (!res.ok) throw new Error(`FMP ${res.status}: ${endpoint}`);
-  return res.json();
+  const data = await res.json();
+  // Detect FMP free-tier limit responses
+  if (data && !Array.isArray(data)) {
+    const msg = data["Error Message"] || data.message || "";
+    if (typeof msg === "string" && (msg.toLowerCase().includes("limit") || msg.toLowerCase().includes("exclusive"))) {
+      throw new Error(`FMP_LIMIT_REACHED`);
+    }
+  }
+  return data;
 }
 
 // ââ Company search ââ
@@ -214,6 +222,34 @@ function transformFMPData(ticker, raw) {
 }
 
 // âââ AUTH âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
+
+// ─── ARAMIS RANKING MODEL ──────────────────────────────────────────────────
+// 5-pillar composite score 0–100 (Quality, Value, Growth, Momentum, Health)
+function calcAramisScore(c) {
+  if (!c || !c.isLive) return null;
+  const quality = Math.min(20, Math.max(0,
+    (c.opMargin > 30 ? 8 : c.opMargin > 20 ? 5 : c.opMargin > 10 ? 2 : 0) +
+    (c.roic > 20 ? 8 : c.roic > 12 ? 5 : c.roic > 6 ? 2 : 0) +
+    (c.netMargin > 20 ? 4 : c.netMargin > 12 ? 2 : 0)
+  ));
+  const value = Math.min(20, Math.max(0,
+    (c.pe > 0 && c.pe < 15 ? 10 : c.pe < 25 ? 6 : c.pe < 35 ? 3 : 0) +
+    (c.evEbitda > 0 && c.evEbitda < 10 ? 10 : c.evEbitda < 18 ? 6 : c.evEbitda < 25 ? 3 : 0)
+  ));
+  const growth = Math.min(20, Math.max(0,
+    c.revenueGrowth > 25 ? 20 : c.revenueGrowth > 15 ? 14 : c.revenueGrowth > 8 ? 9 : c.revenueGrowth > 3 ? 5 : 0
+  ));
+  const momentum = Math.min(20, Math.max(0,
+    c.fcfMargin > 25 ? 20 : c.fcfMargin > 15 ? 14 : c.fcfMargin > 8 ? 8 : c.fcfMargin > 0 ? 4 : 0
+  ));
+  const spread = (c.roic || 0) - (c.wacc || 8);
+  const health = Math.min(20, Math.max(0,
+    (c.netDebt < 0 ? 10 : c.netDebt < 5 ? 7 : c.netDebt < 20 ? 3 : 0) +
+    (spread > 10 ? 10 : spread > 5 ? 7 : spread > 0 ? 4 : 0)
+  ));
+  return { total: quality + value + growth + momentum + health, quality, value, growth, momentum, health };
+}
+
 const USERS = [
   { id:1, email:"jeffrey@aramiscapital.org",    password:"Aramis2026!",  name:"Jeffrey Kariwo",     role:"Founder & Chairperson",   tier:"admin",      avatar:"JK" },
   { id:2, email:"khulekani@aramiscapital.org",  password:"Aramis2026!",  name:"Khulekani Bhila",    role:"Chief Executive Officer",  tier:"admin",      avatar:"KB" },
@@ -337,7 +373,7 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading }) {
 // âââ DETAIL PANEL âââââââââââââââââââââââââââââââââââââââââââââââââââââââââââââ
 function DetailPanel({ c, onClose, permissions }) {
   const [tab,setTab]=useState("overview");
-  const tabs=["overview","financials","scenarios","entry","news","thesis"];
+  const tabs=["overview","chart","financials","scenarios","entry","news","thesis"];
   const wr = c.bear&&c.base&&c.bull ? ((c.bear.ret*c.bear.prob)+(c.base.ret*c.base.prob)+(c.bull.ret*c.bull.prob))/100 : 0;
   const spread = (c.roic||0) - (c.wacc||8);
   const Stat=({label,value,sub,color})=>(
@@ -495,6 +531,28 @@ function DetailPanel({ c, onClose, permissions }) {
             <div style={{background:"rgba(201,168,76,0.06)",border:"1px solid rgba(201,168,76,0.15)",borderRadius:8,padding:"10px 12px",marginTop:4}}>
               <div style={{fontSize:9,color:GOLD,fontFamily:"DM Mono,monospace",marginBottom:4}}>ANALYST ACTION REQUIRED</div>
               <div style={{fontSize:10,color:"rgba(255,255,255,0.45)",lineHeight:1.6}}>Entry/trim bands are auto-calculated from current price. Analyst must define specific fundamental triggers in Document B Section 9 (Exit Framework) before IC submission.</div>
+            </div>
+          </div>
+        )}
+        {tab==="chart"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:2}}>INTERACTIVE CHART — {c.ticker}</div>
+            <div style={{borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
+              <iframe
+                key={c.ticker}
+                src={`https://s.tradingview.com/widgetembed/?symbol=${c.exchange}:${c.ticker}&interval=D&hidesidetoolbar=0&symboledit=0&saveimage=0&toolbarbg=111120&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=1&showpopupbutton=0&locale=en`}
+                style={{width:"100%",height:420,border:"none",display:"block"}}
+                allowTransparency={true}
+                title={`${c.ticker} chart`}
+              />
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+              <Stat label="Current Price" value={c.price?`$${c.price.toLocaleString()}`:"—"} sub={`Mkt Cap ${c.mktCap||"—"}`}/>
+              <Stat label="P/E Ratio" value={`${c.pe||"—"}x`} sub={`EV/EBITDA ${c.evEbitda||"—"}x`}/>
+              <Stat label="DCF Fair Value" value={c.dcfValue||"—"} color={GOLD} sub="FMP DCF model"/>
+            </div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>
+              Powered by TradingView · Data via FMP · For authorised Aramis Capital personnel only
             </div>
           </div>
         )}
@@ -691,6 +749,7 @@ function Platform({ user, permissions, onLogout }) {
   );
   const [selected, setSelected] = useState(null);
   const [filterStatus, setFilterStatus] = useState("All");
+  const [view, setView] = useState("cards"); // "cards" | "ranking"
   const [filterTier, setFilterTier] = useState("All");
   const [sortBy, setSortBy] = useState("name");
   const [apiStatus, setApiStatus] = useState("loading"); // loading | ok | error | demo
@@ -705,7 +764,10 @@ function Platform({ user, permissions, onLogout }) {
         if (cancelled) break;
         try {
           const raw = await loadCompanyData(seed.ticker);
-          if (!raw || !raw.profile) continue;
+          if (!raw || !raw.profile) {
+            setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false} : c));
+            continue;
+          }
           const transformed = transformFMPData(seed.ticker, raw);
           setUniverse(prev => prev.map(c =>
             c.ticker === seed.ticker
@@ -768,6 +830,10 @@ function Platform({ user, permissions, onLogout }) {
           <div style={{fontSize:7.5,color:GOLD,fontFamily:"DM Mono,monospace",letterSpacing:"0.08em",marginTop:1}}>RESEARCH PLATFORM</div>
         </div>
         <div style={{width:"1px",height:22,background:"rgba(255,255,255,0.08)",marginLeft:4}}/>
+        <div style={{display:"flex",gap:4}}>
+          <button onClick={()=>setView("cards")} style={{fontSize:8,padding:"4px 9px",borderRadius:6,border:`1px solid ${view==="cards"?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.08)"}`,background:view==="cards"?"rgba(201,168,76,0.08)":"transparent",color:view==="cards"?GOLD:"rgba(255,255,255,0.3)",cursor:"pointer",fontFamily:"DM Mono,monospace"}}>UNIVERSE</button>
+          <button onClick={()=>setView("ranking")} style={{fontSize:8,padding:"4px 9px",borderRadius:6,border:`1px solid ${view==="ranking"?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.08)"}`,background:view==="ranking"?"rgba(201,168,76,0.08)":"transparent",color:view==="ranking"?GOLD:"rgba(255,255,255,0.3)",cursor:"pointer",fontFamily:"DM Mono,monospace"}}>ARAMIS RANKING</button>
+        </div>
         <div style={{flex:1}}/>
         {/* API status indicator */}
         <div style={{display:"flex",alignItems:"center",gap:5,padding:"3px 8px",borderRadius:6,background:apiStatus==="ok"?"rgba(34,197,94,0.08)":apiStatus==="demo"?"rgba(245,158,11,0.08)":"rgba(255,255,255,0.04)",border:`1px solid ${apiStatus==="ok"?"rgba(34,197,94,0.2)":apiStatus==="demo"?"rgba(245,158,11,0.2)":"rgba(255,255,255,0.08)"}`}}>
@@ -785,6 +851,64 @@ function Platform({ user, permissions, onLogout }) {
         <UserMenu user={user} permissions={permissions} onLogout={onLogout}/>
       </div>
 
+      {view==="ranking" && (
+        <div style={{flex:1,overflow:"auto",padding:16}}>
+          <div style={{marginBottom:12,display:"flex",alignItems:"center",gap:10}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif"}}>Aramis Ranking Model</div>
+            <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace"}}>Composite score across Quality · Value · Growth · Momentum · Financial Health</div>
+          </div>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"DM Mono,monospace"}}>
+              <thead>
+                <tr>
+                  {["#","Ticker","Name","Score","Quality","Value","Growth","Momentum","Health","P/E","ROIC","Rev Growth","IC Status"].map(h=>(
+                    <th key={h} style={{textAlign:"left",padding:"8px 10px",color:"rgba(255,255,255,0.3)",fontWeight:500,borderBottom:"1px solid rgba(255,255,255,0.07)",whiteSpace:"nowrap",fontSize:8}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {[...universe]
+                  .map(c=>({...c, _rank: calcAramisScore(c)}))
+                  .sort((a,b)=> (b._rank?.total||0)-(a._rank?.total||0))
+                  .map((c,i)=>{
+                    const r = c._rank;
+                    const scoreColor = r ? (r.total>=70?"#22c55e":r.total>=50?GOLD:r.total>=30?"#f59e0b":"#ef4444") : "rgba(255,255,255,0.2)";
+                    return (
+                      <tr key={c.ticker} onClick={()=>{setSelected(c);setView("cards");}} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",transition:"background 0.1s"}}
+                          onMouseEnter={e=>e.currentTarget.style.background="rgba(255,255,255,0.025)"}
+                          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                        <td style={{padding:"8px 10px",color:"rgba(255,255,255,0.2)"}}>{i+1}</td>
+                        <td style={{padding:"8px 10px",color:GOLD,fontWeight:700}}>{c.ticker}</td>
+                        <td style={{padding:"8px 10px",color:"rgba(255,255,255,0.6)",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</td>
+                        <td style={{padding:"8px 10px"}}>
+                          {r ? (
+                            <div style={{display:"flex",alignItems:"center",gap:6}}>
+                              <span style={{fontSize:13,fontWeight:700,color:scoreColor,fontFamily:"Syne,sans-serif"}}>{r.total}</span>
+                              <div style={{width:40,height:3,background:"rgba(255,255,255,0.06)",borderRadius:2}}><div style={{width:`${r.total}%`,height:"100%",background:scoreColor,borderRadius:2}}/></div>
+                            </div>
+                          ) : <span style={{color:"rgba(255,255,255,0.18)"}}>—</span>}
+                        </td>
+                        {["quality","value","growth","momentum","health"].map(k=>(
+                          <td key={k} style={{padding:"8px 10px",color:r?(r[k]>=14?"#22c55e":r[k]>=8?GOLD:"rgba(255,255,255,0.4)"):"rgba(255,255,255,0.18)"}}>{r?r[k]:"—"}</td>
+                        ))}
+                        <td style={{padding:"8px 10px",color:"rgba(255,255,255,0.55)"}}>{c.pe?`${c.pe}x`:"—"}</td>
+                        <td style={{padding:"8px 10px",color:c.roic>12?"#22c55e":c.roic>6?GOLD:"rgba(255,255,255,0.4)"}}>{c.roic?`${c.roic}%`:"—"}</td>
+                        <td style={{padding:"8px 10px",color:c.revenueGrowth>15?"#22c55e":c.revenueGrowth>5?GOLD:"rgba(255,255,255,0.4)"}}>{c.revenueGrowth!=null?`+${c.revenueGrowth}%`:"—"}</td>
+                        <td style={{padding:"8px 10px"}}>
+                          <span style={{fontSize:8,padding:"2px 6px",borderRadius:8,background:`${STATUS_COLORS[c.icStatus]||"#444"}18`,color:STATUS_COLORS[c.icStatus]||"#888"}}>{c.icStatus}</span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{marginTop:12,fontSize:8,color:"rgba(255,255,255,0.15)",fontFamily:"DM Mono,monospace"}}>
+            Scores: Quality (max 20) · Value (max 20) · Growth (max 20) · Momentum/FCF (max 20) · Financial Health (max 20) · Total (max 100) — Proprietary Aramis Capital IP
+          </div>
+        </div>
+      )}
+      {view==="cards" && (
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
         {/* SIDEBAR */}
         <div style={{width:292,flexShrink:0,borderRight:"1px solid rgba(255,255,255,0.07)",display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -849,6 +973,8 @@ function Platform({ user, permissions, onLogout }) {
             </div>
           )}
         </div>
+      </div>
+      )}
       </div>
     </div>
   );
