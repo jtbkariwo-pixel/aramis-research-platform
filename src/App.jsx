@@ -774,7 +774,6 @@ function DetailPanel({ c, onClose, permissions }) {
             </div>
           </div>
         )}
-        )}
       </div>
     </div>
   );
