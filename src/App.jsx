@@ -606,6 +606,7 @@ function DetailPanel({ c, onClose, permissions }) {
               <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{c.icStatus==="Approved"?"Ã¢ÂÂ Filed and approved":c.icStatus==="Conditional"?"Ã¢ÂÂ  Conditions outstanding":"Ã¢ÂÂ Memorandum pending Ã¢ÂÂ complete Document B template before IC"}</div>
             </div>
           </div>
+        )}
         {tab==="earnings"&&(
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:4}}>EPS HISTORY — ACTUAL VS ESTIMATE</div>
