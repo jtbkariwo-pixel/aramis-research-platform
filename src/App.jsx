@@ -66,14 +66,14 @@ async function fetchIncome(ticker) {
 
 // Ã¢ÂÂÃ¢ÂÂ Balance sheet Ã¢ÂÂÃ¢ÂÂ
 async function fetchBalanceSheet(ticker) {
-  const data = await fmpFetch("/stable/balance-sheet-statement", { symbol: ticker, limit: 3, period: "annual" });
-  return Array.isArray(data) ? data[0] : null;
+  const data = await fmpFetch("/stable/balance-sheet-statement", { symbol: ticker, limit: 5, period: "annual" });
+  return Array.isArray(data) ? data : [];
 }
 
 // Ã¢ÂÂÃ¢ÂÂ Cash flow Ã¢ÂÂÃ¢ÂÂ
 async function fetchCashFlow(ticker) {
-  const data = await fmpFetch("/stable/cash-flow-statement", { symbol: ticker, limit: 3, period: "annual" });
-  return Array.isArray(data) ? data[0] : null;
+  const data = await fmpFetch("/stable/cash-flow-statement", { symbol: ticker, limit: 5, period: "annual" });
+  return Array.isArray(data) ? data : [];
 }
 
 // Ã¢ÂÂÃ¢ÂÂ Real-time quote Ã¢ÂÂÃ¢ÂÂ
@@ -101,9 +101,21 @@ async function fetchNews(ticker) {
 }
 
 // Ã¢ÂÂÃ¢ÂÂ Master loader: fetch everything for one company Ã¢ÂÂÃ¢ÂÂ
+// ── Dividend history ──
+async function fetchDividends(ticker) {
+  const data = await fmpFetch("/stable/dividends", { symbol: ticker, limit: 12 });
+  return Array.isArray(data) ? data : [];
+}
+
+// ── Earnings history (EPS actual vs estimate) ──
+async function fetchEarnings(ticker) {
+  const data = await fmpFetch("/stable/earnings", { symbol: ticker, limit: 8 });
+  return Array.isArray(data) ? data : [];
+}
+
 async function loadCompanyData(ticker) {
   try {
-    const [profile, metrics, ratios, income, balance, cashflow, quote, dcf, estimates, news] = await Promise.allSettled([
+    const [profile, metrics, ratios, income, balance, cashflow, quote, dcf, estimates, news, dividends, earnings] = await Promise.allSettled([
       fetchProfile(ticker),
       fetchKeyMetrics(ticker),
       fetchRatios(ticker),
@@ -114,18 +126,22 @@ async function loadCompanyData(ticker) {
       fetchDCF(ticker),
       fetchEstimates(ticker),
       fetchNews(ticker),
+      fetchDividends(ticker),
+      fetchEarnings(ticker),
     ]);
     return {
       profile:   profile.status   === "fulfilled" ? profile.value   : null,
       metrics:   metrics.status   === "fulfilled" ? metrics.value   : null,
       ratios:    ratios.status    === "fulfilled" ? ratios.value    : null,
       income:    income.status    === "fulfilled" ? income.value    : [],
-      balance:   balance.status   === "fulfilled" ? balance.value   : null,
-      cashflow:  cashflow.status  === "fulfilled" ? cashflow.value  : null,
+      balance:   balance.status   === "fulfilled" ? balance.value   : [],
+      cashflow:  cashflow.status  === "fulfilled" ? cashflow.value  : [],
       quote:     quote.status     === "fulfilled" ? quote.value     : null,
       dcf:       dcf.status       === "fulfilled" ? dcf.value       : null,
       estimates: estimates.status === "fulfilled" ? estimates.value : null,
       news:      news.status      === "fulfilled" ? news.value      : [],
+      dividends: dividends.status === "fulfilled" ? dividends.value : [],
+      earnings:  earnings.status  === "fulfilled" ? earnings.value  : [],
     };
   } catch (e) {
     console.error("loadCompanyData error:", e);
@@ -135,14 +151,14 @@ async function loadCompanyData(ticker) {
 
 // Ã¢ÂÂÃ¢ÂÂ Transform raw FMP data Ã¢ÂÂ platform company object Ã¢ÂÂÃ¢ÂÂ
 function transformFMPData(ticker, raw) {
-  const { profile, metrics, ratios, income, balance, cashflow, quote, dcf, estimates, news } = raw;
+  const { profile, metrics, ratios, income, balance, cashflow, quote, dcf, estimates, news, dividends, earnings } = raw;
   const p   = profile   || {};
   const m   = metrics   || {};
   const r   = ratios    || {};
   const i0  = income[0] || {};
   const i1  = income[1] || {};
-  const b   = balance   || {};
-  const cf  = cashflow  || {};
+  const b   = Array.isArray(balance)  ? (balance[0]  || {}) : (balance  || {});
+  const cf  = Array.isArray(cashflow) ? (cashflow[0] || {}) : (cashflow || {});
   const q   = quote     || {};
   const d   = dcf       || {};
   const est = estimates || {};
@@ -217,6 +233,10 @@ function transformFMPData(ticker, raw) {
     trimZone:       Math.round(price * 1.25 * 100)/100,
     news:           news || [],
     income:         income || [],
+    balance:        Array.isArray(balance) ? balance : [],
+    cashflow:       Array.isArray(cashflow) ? cashflow : [],
+    dividends:      dividends || [],
+    earnings:       earnings || [],
     isLive:         true,
   };
 }
@@ -356,7 +376,7 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading }) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
         <div>
           <div style={{fontSize:13,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif"}}>{c.price ? `$${c.price.toLocaleString()}` : "Ã¢ÂÂ"}</div>
-          <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>P/E {c.pe||"Ã¢ÂÂ"}x</div>
+          <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>{[c.pe&&`P/E ${c.pe}x`,c.opMargin&&`OM ${c.opMargin}%`,c.roic&&`ROIC ${c.roic}%`].filter(Boolean).join(" · ")||"—"}</div>
         </div>
         <div style={{textAlign:"right"}}>
           {wr !== null ? <div style={{fontSize:11,fontWeight:600,color:wr>=10?"#22c55e":wr>=5?GOLD:"#ef4444",fontFamily:"DM Mono,monospace"}}>{wr>=0?"+":""}{wr.toFixed(1)}%</div> : <div style={{fontSize:11,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>Ã¢ÂÂ</div>}
@@ -373,7 +393,7 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading }) {
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function DetailPanel({ c, onClose, permissions }) {
   const [tab,setTab]=useState("overview");
-  const tabs=["overview","chart","financials","scenarios","entry","news","thesis"];
+  const tabs=["overview","chart","financials","earnings","dividends","balance","cashflow","technicals","news","aramis"];
   const wr = c.bear&&c.base&&c.bull ? ((c.bear.ret*c.bear.prob)+(c.base.ret*c.base.prob)+(c.bull.ret*c.bull.prob))/100 : 0;
   const spread = (c.roic||0) - (c.wacc||8);
   const Stat=({label,value,sub,color})=>(
@@ -586,6 +606,174 @@ function DetailPanel({ c, onClose, permissions }) {
               <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{c.icStatus==="Approved"?"Ã¢ÂÂ Filed and approved":c.icStatus==="Conditional"?"Ã¢ÂÂ  Conditions outstanding":"Ã¢ÂÂ Memorandum pending Ã¢ÂÂ complete Document B template before IC"}</div>
             </div>
           </div>
+        {tab==="earnings"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:4}}>EPS HISTORY — ACTUAL VS ESTIMATE</div>
+            {c.earnings && c.earnings.length > 0 ? (
+              <div style={{background:"rgba(255,255,255,0.025)",borderRadius:8,padding:"13px"}}>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",fontSize:9,borderCollapse:"collapse",fontFamily:"DM Mono,monospace"}}>
+                    <thead><tr>{["Date","Actual EPS","Est. EPS","Surprise","Rev Actual","Rev Est."].map(h=>(<th key={h} style={{textAlign:"left",padding:"5px 8px",color:"rgba(255,255,255,0.3)",fontWeight:500,borderBottom:"1px solid rgba(255,255,255,0.07)",whiteSpace:"nowrap",fontSize:8}}>{h}</th>))}</tr></thead>
+                    <tbody>{c.earnings.slice(0,8).map((e,i)=>{
+                      const surp=e.eps!=null&&e.epsEstimated!=null?((e.eps-e.epsEstimated)/Math.abs(e.epsEstimated||1)*100).toFixed(1):null;
+                      const fmtR=v=>v>=1e12?`${(v/1e12).toFixed(1)}T`:v>=1e9?`${(v/1e9).toFixed(1)}B`:v>=1e6?`${(v/1e6).toFixed(0)}M`:"—";
+                      return(<tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                        <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.5)"}}>{e.date?.substring(0,10)||"—"}</td>
+                        <td style={{padding:"5px 8px",color:e.eps>0?"#22c55e":"#ef4444",fontWeight:600}}>{e.eps!=null?`${e.eps.toFixed(2)}`:"—"}</td>
+                        <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.5)"}}>{e.epsEstimated!=null?`${e.epsEstimated.toFixed(2)}`:"—"}</td>
+                        <td style={{padding:"5px 8px",color:surp>0?"#22c55e":surp<0?"#ef4444":"rgba(255,255,255,0.4)"}}>{surp!=null?`${surp>0?"+":""}${surp}%`:"—"}</td>
+                        <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.7)"}}>{e.revenue?fmtR(e.revenue):"—"}</td>
+                        <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.4)"}}>{e.revenueEstimated?fmtR(e.revenueEstimated):"—"}</td>
+                      </tr>);
+                    })}</tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (<div style={{fontSize:11,color:"rgba(255,255,255,0.3)",fontFamily:"DM Sans,sans-serif",textAlign:"center",padding:"24px 0"}}>No earnings data on free tier for this ticker</div>)}
+          </div>
+        )}
+        {tab==="dividends"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:4}}>DIVIDEND HISTORY</div>
+            {c.dividends && c.dividends.length > 0 ? (
+              <div style={{background:"rgba(255,255,255,0.025)",borderRadius:8,padding:"13px"}}>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",fontSize:9,borderCollapse:"collapse",fontFamily:"DM Mono,monospace"}}>
+                    <thead><tr>{["Ex-Div Date","Payment Date","Amount","Adj Amount","Label"].map(h=>(<th key={h} style={{textAlign:"left",padding:"5px 8px",color:"rgba(255,255,255,0.3)",fontWeight:500,borderBottom:"1px solid rgba(255,255,255,0.07)",whiteSpace:"nowrap",fontSize:8}}>{h}</th>))}</tr></thead>
+                    <tbody>{c.dividends.slice(0,12).map((dv,i)=>(<tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                      <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.5)"}}>{(dv.date||dv.recordDate||"").substring(0,10)||"—"}</td>
+                      <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.4)"}}>{(dv.paymentDate||"").substring(0,10)||"—"}</td>
+                      <td style={{padding:"5px 8px",color:GOLD,fontWeight:600}}>{dv.dividend!=null?`${dv.dividend.toFixed(4)}`:"—"}</td>
+                      <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.4)"}}>{dv.adjDividend!=null?`${dv.adjDividend.toFixed(4)}`:"—"}</td>
+                      <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.3)",fontSize:8}}>{dv.label||"—"}</td>
+                    </tr>))}</tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (<div style={{fontSize:11,color:"rgba(255,255,255,0.3)",fontFamily:"DM Sans,sans-serif",textAlign:"center",padding:"24px 0"}}>No dividend history — this company may not pay dividends</div>)}
+          </div>
+        )}
+        {tab==="balance"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:4}}>BALANCE SHEET (ANNUAL)</div>
+            {c.balance && c.balance.length > 0 ? (
+              <div style={{background:"rgba(255,255,255,0.025)",borderRadius:8,padding:"13px"}}>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",fontSize:9,borderCollapse:"collapse",fontFamily:"DM Mono,monospace"}}>
+                    <thead><tr>{["Year","Total Assets","Liabilities","Equity","Cash","Net Debt","Curr. Ratio"].map(h=>(<th key={h} style={{textAlign:"left",padding:"5px 8px",color:"rgba(255,255,255,0.3)",fontWeight:500,borderBottom:"1px solid rgba(255,255,255,0.07)",whiteSpace:"nowrap",fontSize:8}}>{h}</th>))}</tr></thead>
+                    <tbody>{c.balance.slice(0,5).map((bs,i)=>{
+                      const fmtB=v=>v>=1e12?`${(v/1e12).toFixed(1)}T`:v>=1e9?`${(v/1e9).toFixed(1)}B`:Math.abs(v||0)>=1e6?`${((v||0)/1e6).toFixed(0)}M`:"—";
+                      const cr=bs.totalCurrentAssets&&bs.totalCurrentLiabilities?(bs.totalCurrentAssets/bs.totalCurrentLiabilities).toFixed(2):"—";
+                      return(<tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                        <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.5)"}}>{bs.calendarYear||bs.date?.substring(0,4)||"—"}</td>
+                        <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.7)"}}>{fmtB(bs.totalAssets)}</td>
+                        <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.5)"}}>{fmtB(bs.totalLiabilities)}</td>
+                        <td style={{padding:"5px 8px",color:"#22c55e"}}>{fmtB(bs.totalStockholdersEquity)}</td>
+                        <td style={{padding:"5px 8px",color:GOLD}}>{fmtB(bs.cashAndCashEquivalents)}</td>
+                        <td style={{padding:"5px 8px",color:bs.netDebt<0?"#22c55e":"rgba(255,255,255,0.5)"}}>{bs.netDebt!=null?fmtB(bs.netDebt):"—"}</td>
+                        <td style={{padding:"5px 8px",color:cr>=2?"#22c55e":cr>=1?"rgba(255,255,255,0.6)":"#ef4444"}}>{cr}</td>
+                      </tr>);
+                    })}</tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (<div style={{fontSize:11,color:"rgba(255,255,255,0.3)",fontFamily:"DM Sans,sans-serif",textAlign:"center",padding:"24px 0"}}>No balance sheet data available</div>)}
+          </div>
+        )}
+        {tab==="cashflow"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:4}}>CASH FLOW STATEMENT (ANNUAL)</div>
+            {c.cashflow && c.cashflow.length > 0 ? (
+              <div style={{background:"rgba(255,255,255,0.025)",borderRadius:8,padding:"13px"}}>
+                <div style={{overflowX:"auto"}}>
+                  <table style={{width:"100%",fontSize:9,borderCollapse:"collapse",fontFamily:"DM Mono,monospace"}}>
+                    <thead><tr>{["Year","Operating CF","Capex","Free CF","FCF Margin","Divs Paid","Net Change"].map(h=>(<th key={h} style={{textAlign:"left",padding:"5px 8px",color:"rgba(255,255,255,0.3)",fontWeight:500,borderBottom:"1px solid rgba(255,255,255,0.07)",whiteSpace:"nowrap",fontSize:8}}>{h}</th>))}</tr></thead>
+                    <tbody>{c.cashflow.slice(0,5).map((cf2,i)=>{
+                      const fmtCF=v=>v>=1e12?`${(v/1e12).toFixed(1)}T`:v>=1e9?`${(v/1e9).toFixed(1)}B`:Math.abs(v||0)>=1e6?`${((v||0)/1e6).toFixed(0)}M`:"—";
+                      const fcf2=cf2.freeCashFlow||((cf2.operatingCashFlow||0)+(cf2.capitalExpenditure||0));
+                      const fcfM=cf2.revenue&&fcf2?(fcf2/cf2.revenue*100).toFixed(0):"—";
+                      return(<tr key={i} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                        <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.5)"}}>{cf2.calendarYear||cf2.date?.substring(0,4)||"—"}</td>
+                        <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.7)"}}>{fmtCF(cf2.operatingCashFlow)}</td>
+                        <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.4)"}}>{fmtCF(cf2.capitalExpenditure)}</td>
+                        <td style={{padding:"5px 8px",color:fcf2>=0?"#22c55e":"#ef4444",fontWeight:600}}>{fmtCF(fcf2)}</td>
+                        <td style={{padding:"5px 8px",color:fcfM>=20?GOLD:"rgba(255,255,255,0.5)"}}>{fcfM!=="—"?`${fcfM}%`:"—"}</td>
+                        <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.3)"}}>{cf2.dividendsPaid?fmtCF(cf2.dividendsPaid):"—"}</td>
+                        <td style={{padding:"5px 8px",color:(cf2.netChangeInCash||0)>=0?"rgba(255,255,255,0.6)":"#ef4444"}}>{cf2.netChangeInCash!=null?fmtCF(cf2.netChangeInCash):"—"}</td>
+                      </tr>);
+                    })}</tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (<div style={{fontSize:11,color:"rgba(255,255,255,0.3)",fontFamily:"DM Sans,sans-serif",textAlign:"center",padding:"24px 0"}}>No cash flow data available</div>)}
+          </div>
+        )}
+        {tab==="technicals"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:4}}>TECHNICAL ANALYSIS — {c.ticker}</div>
+            <div style={{borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
+              <iframe key={`tech-${c.ticker}`} src={`https://s.tradingview.com/widgetembed/?symbol=${c.exchange}:${c.ticker}&interval=D&theme=dark&style=1&hide_side_toolbar=0&allow_symbol_change=0&studies=RSI%40tv-basicstudies%1FMACD%40tv-basicstudies%1FBollingerBands%40tv-basicstudies%1FSMA%40tv-basicstudies&locale=en&toolbarbg=090912&withdateranges=1`} style={{width:"100%",height:460,border:"none",display:"block"}} allowTransparency={true} title={`${c.ticker} technicals`}/>
+            </div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>Powered by TradingView · RSI · MACD · Bollinger Bands · SMA</div>
+          </div>
+        )}
+        {tab==="aramis"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            <div style={{background:"rgba(201,168,76,0.05)",border:"1px solid rgba(201,168,76,0.15)",borderRadius:7,padding:"12px"}}>
+              <div style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace",marginBottom:8}}>ARAMIS CAPITAL — INVESTMENT VIEW</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                <Stat label="IC Status" value={c.icStatus} color={STATUS_COLORS[c.icStatus]||"#888"}/>
+                <Stat label="Risk Tier" value={`Tier ${c.riskTier}`} color={TIER_COLORS[c.riskTier]||"#888"}/>
+                <Stat label="Theme" value={c.theme||"—"} color={THEME_COLORS[c.theme]||"#888"}/>
+                <Stat label="Data Source" value={c.isLive?"FMP Live":"Seed"} color={c.isLive?"#22c55e":"#888"}/>
+              </div>
+            </div>
+            {c.bear&&c.base&&c.bull&&(
+              <div style={{background:"rgba(255,255,255,0.025)",borderRadius:8,padding:"13px"}}>
+                <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:9}}>RETURN SCENARIOS (probability-weighted)</div>
+                <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                  {[{label:"Bear",...c.bear,color:"#ef4444"},{label:"Base",...c.base,color:GOLD},{label:"Bull",...c.bull,color:"#22c55e"}].map(s=>(
+                    <div key={s.label} style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:9,color:"rgba(255,255,255,0.3)",width:28,fontFamily:"DM Mono,monospace"}}>{s.label}</span>
+                      <div style={{flex:1,height:3,background:"rgba(255,255,255,0.06)",borderRadius:2,overflow:"hidden"}}><div style={{width:`${Math.max(0,Math.min(100,(s.ret+30)/70*100))}%`,height:"100%",background:s.color,borderRadius:2}}/></div>
+                      <span style={{fontSize:10,color:s.color,width:34,textAlign:"right",fontFamily:"DM Mono,monospace"}}>{s.ret>=0?"+":""}{s.ret}%</span>
+                      <span style={{fontSize:8,color:"rgba(255,255,255,0.2)",width:26,fontFamily:"DM Mono,monospace"}}>{s.prob}%</span>
+                    </div>
+                  ))}
+                  <div style={{marginTop:3,padding:"5px 9px",background:"rgba(201,168,76,0.08)",borderRadius:5,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace"}}>Probability-weighted return</span>
+                    <span style={{fontSize:11,color:wr>=10?"#22c55e":wr>=5?GOLD:"#ef4444",fontWeight:700,fontFamily:"DM Mono,monospace"}}>{wr>=0?"+":""}{wr.toFixed(1)}%</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            {c.entryBand&&(
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace"}}>ENTRY & POSITION MANAGEMENT</div>
+                {[
+                  {label:"Primary Entry",range:c.entryBand,color:"#22c55e",note:"Auto-calculated: 8–15% below current price"},
+                  {label:"Hold Range",range:c.holdBand,color:"#60a5fa",note:"Current price — hold existing position"},
+                  {label:"Trim Zone",range:[c.trimZone,null],color:GOLD,note:"Reduce 25–30% of position at this level"},
+                ].map(z=>(
+                  <div key={z.label} style={{background:"rgba(255,255,255,0.02)",borderRadius:7,padding:"10px 12px"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div><div style={{fontSize:9,color:z.color,fontFamily:"DM Mono,monospace",fontWeight:600}}>{z.label}</div><div style={{fontSize:8,color:"rgba(255,255,255,0.28)",marginTop:2}}>{z.note}</div></div>
+                      <div style={{fontSize:11,color:"#fff",fontFamily:"DM Mono,monospace",fontWeight:600}}>${z.range[0]?.toLocaleString()}{z.range[1]?` – ${z.range[1]?.toLocaleString()}`:""}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div style={{background:"rgba(255,255,255,0.025)",borderRadius:7,padding:"12px"}}>
+              <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:6}}>ANALYST NOTE</div>
+              <div style={{fontSize:10,color:"rgba(255,255,255,0.5)",lineHeight:1.6}}>{c.analystNote||"No notes available."}</div>
+            </div>
+            <div style={{background:"rgba(255,255,255,0.025)",borderRadius:7,padding:"12px"}}>
+              <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:6}}>DOCUMENT B — IC MEMORANDUM</div>
+              <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{c.icStatus==="Approved"?"✓ Filed and approved":c.icStatus==="Conditional"?"⚠ Conditions outstanding":"◦ Memorandum pending — complete Document B before IC"}</div>
+            </div>
+          </div>
+        )}
         )}
       </div>
     </div>
@@ -861,8 +1049,22 @@ function Platform({ user, permissions, onLogout }) {
             <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"DM Mono,monospace"}}>
               <thead>
                 <tr>
-                  {["#","Ticker","Name","Score","Quality","Value","Growth","Momentum","Health","P/E","ROIC","Rev Growth","IC Status"].map(h=>(
-                    <th key={h} style={{textAlign:"left",padding:"8px 10px",color:"rgba(255,255,255,0.3)",fontWeight:500,borderBottom:"1px solid rgba(255,255,255,0.07)",whiteSpace:"nowrap",fontSize:8}}>{h}</th>
+                  {[
+                    {h:"#",tip:"Rank by Aramis Score"},
+                    {h:"Ticker",tip:"Exchange ticker symbol"},
+                    {h:"Name",tip:"Company name"},
+                    {h:"Score",tip:"Aramis Composite Score 0–100. ≥70=Strong • 50–69=Neutral • <50=Weak. Equal-weighted sum of 5 pillars (max 20 each)."},
+                    {h:"Quality",tip:"Quality (0–20): operating margin + ROIC + net margin vs sector thresholds. Rewards durable high-margin businesses with efficient capital deployment."},
+                    {h:"Value",tip:"Value (0–20): P/E and EV/EBITDA vs absolute thresholds. P/E<15=10pts, <25=6pts, <35=3pts. EV/EBITDA<10=10pts, <18=6pts, <25=3pts."},
+                    {h:"Growth",tip:"Growth (0–20): revenue growth YoY from FMP income statements. >25%=20pts • >15%=14pts • >8%=9pts • >3%=4pts • ≤0=0pts."},
+                    {h:"Momentum",tip:"Momentum/FCF (0–20): free cash flow margin as earnings quality proxy. FCF>25%=20pts • >15%=14pts • >8%=8pts • >0%=4pts."},
+                    {h:"Health",tip:"Financial Health (0–20): net debt position (10pts) + ROIC–WACC spread (10pts). Net cash = full 10pts; spread >10%=10pts."},
+                    {h:"P/E",tip:"Price-to-Earnings ratio (trailing 12m). Lower = cheaper vs earnings. N/A for loss-making companies."},
+                    {h:"ROIC",tip:"Return on Invested Capital. >12% = strong capital allocator • >6% = acceptable • <6% = destroys value relative to cost of capital."},
+                    {h:"Rev Growth",tip:"Revenue growth year-over-year %, derived from last two annual income statements via FMP."},
+                    {h:"IC Status",tip:"Investment Committee status: Approved = full conviction • Conditional = pending approval • Under Review = active screening • Not Screened = no IC review yet."},
+                  ].map(({h,tip})=>(
+                    <th key={h} title={tip} style={{textAlign:"left",padding:"8px 10px",color:"rgba(255,255,255,0.3)",fontWeight:500,borderBottom:"1px solid rgba(255,255,255,0.07)",whiteSpace:"nowrap",fontSize:8,cursor:"help"}}>{h}{tip?" ⓘ":""}</th>
                   ))}
                 </tr>
               </thead>
