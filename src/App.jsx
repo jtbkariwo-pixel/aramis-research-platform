@@ -353,7 +353,7 @@ function DisciplineRadar({ scores, size=195 }) {
 }
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ COMPANY CARD Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-function CompanyCard({ c, onClick, selected, loading: cardLoading }) {
+function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStatus, onWatchlist, analystNote, onNote }) {
   const wr = c.bear && c.base && c.bull
     ? ((c.bear.ret*c.bear.prob)+(c.base.ret*c.base.prob)+(c.bull.ret*c.bull.prob))/100
     : null;
@@ -365,6 +365,7 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading }) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
         <div>
           <div style={{fontSize:14,fontWeight:800,color:"#fff",fontFamily:"Syne,sans-serif",lineHeight:1}}>{c.ticker}</div>
+          {watchlistStatus&&<span style={{fontSize:7,padding:"1px 5px",borderRadius:3,fontFamily:"DM Mono,monospace",fontWeight:700,marginTop:2,display:"inline-block",background:watchlistStatus==="Buy"?"rgba(34,197,94,0.25)":watchlistStatus==="Sell"?"rgba(239,68,68,0.25)":watchlistStatus==="Hold"?"rgba(251,191,36,0.25)":"rgba(99,102,241,0.25)",color:watchlistStatus==="Buy"?"#22c55e":watchlistStatus==="Sell"?"#ef4444":watchlistStatus==="Hold"?"#fbbf24":"#818cf8"}}>{watchlistStatus}</span>}
           <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",marginTop:2,fontFamily:"DM Mono,monospace"}}>{c.exchange} ÃÂ· {c.country||"Ã¢ÂÂ"}</div>
         </div>
         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
@@ -393,7 +394,7 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading }) {
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function DetailPanel({ c, onClose, permissions }) {
   const [tab,setTab]=useState("overview");
-  const tabs=["overview","chart","financials","earnings","dividends","balance","cashflow","technicals","news","aramis"];
+  const tabs=["overview","chart","financials","earnings","dividends","balance","cashflow","technicals","news","aramis","notes"];
   const wr = c.bear&&c.base&&c.bull ? ((c.bear.ret*c.bear.prob)+(c.base.ret*c.base.prob)+(c.bull.ret*c.bull.prob))/100 : 0;
   const spread = (c.roic||0) - (c.wacc||8);
   const Stat=({label,value,sub,color})=>(
@@ -809,6 +810,20 @@ function UserMenu({ user, permissions, onLogout }) {
                 <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{p.label}</span>
                 <span style={{fontSize:9,color:p.val?"#22c55e":"#ef4444",fontFamily:"DM Mono,monospace"}}>{p.val?"Ã¢ÂÂ":"Ã¢ÂÂ"}</span>
               </div>
+            {tab==="notes"&&(
+              <div style={{padding:12,display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>WATCHLIST STATUS</div>
+                <div style={{display:"flex",gap:6}}>
+                  {["Watch","Buy","Hold","Sell"].map(st=>(
+                    <button key={st} onClick={()=>onWatchlist&&onWatchlist(c.ticker,st)} style={{fontSize:9,padding:"4px 10px",borderRadius:4,border:"1px solid",fontFamily:"DM Mono,monospace",fontWeight:700,cursor:"pointer",borderColor:watchlistStatus===st?(st==="Buy"?"#22c55e":st==="Sell"?"#ef4444":st==="Hold"?"#fbbf24":"#818cf8"):"rgba(255,255,255,0.12)",background:watchlistStatus===st?(st==="Buy"?"rgba(34,197,94,0.18)":st==="Sell"?"rgba(239,68,68,0.18)":st==="Hold"?"rgba(251,191,36,0.18)":"rgba(129,140,248,0.18)"):"transparent",color:watchlistStatus===st?(st==="Buy"?"#22c55e":st==="Sell"?"#ef4444":st==="Hold"?"#fbbf24":"#818cf8"):"rgba(255,255,255,0.4)"}}>{st}</button>
+                  ))}
+                  {watchlistStatus&&<button onClick={()=>onWatchlist&&onWatchlist(c.ticker,watchlistStatus)} style={{fontSize:9,padding:"4px 8px",borderRadius:4,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",cursor:"pointer",marginLeft:"auto"}}>Clear</button>}
+                </div>
+                <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1,marginTop:4}}>ANALYST NOTES</div>
+                <textarea value={analystNote||""} onChange={e=>onNote&&onNote(c.ticker,e.target.value)} placeholder="Add your research notes here..." style={{width:"100%",minHeight:120,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,color:"#fff",fontFamily:"DM Mono,monospace",fontSize:11,padding:10,resize:"vertical",outline:"none",boxSizing:"border-box"}}/>
+                <div style={{fontSize:9,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>Notes are saved for this session only.</div>
+              </div>
+            )}
             ))}
           </div>
           <div style={{padding:"4px 10px 8px",borderBottom:"1px solid rgba(255,255,255,0.07)",marginBottom:6}}>
@@ -941,6 +956,11 @@ function Platform({ user, permissions, onLogout }) {
   const [filterTier, setFilterTier] = useState("All");
   const [sortBy, setSortBy] = useState("name");
   const [apiStatus, setApiStatus] = useState("loading"); // loading | ok | error | demo
+  const [watchlist, setWatchlist] = useState({});
+  const [analystNotes, setAnalystNotes] = useState({});
+  const [filterWL, setFilterWL] = useState("All");
+  const setWL = useCallback((ticker, status) => setWatchlist(prev => ({...prev, [ticker]: status === prev[ticker] ? undefined : status})), []);
+  const setNote = useCallback((ticker, note) => setAnalystNotes(prev => ({...prev, [ticker]: note})), []);
 
   // Load all seed tickers on mount
   useEffect(() => {
@@ -991,7 +1011,8 @@ function Platform({ user, permissions, onLogout }) {
   const filtered = universe.filter(c => {
     const ms = filterStatus === "All" || c.icStatus === filterStatus;
     const mt = filterTier === "All" || c.riskTier === parseInt(filterTier);
-    return ms && mt;
+    const mw = filterWL === "All" || watchlist[c.ticker] === filterWL;
+    return ms && mt && mw;
   }).sort((a,b)=>{
     if(sortBy==="name")return a.name.localeCompare(b.name);
     if(sortBy==="score"&&a.scores&&b.scores)return(Object.values(b.scores).reduce((x,y)=>x+y,0)/6)-(Object.values(a.scores).reduce((x,y)=>x+y,0)/6);
@@ -1133,9 +1154,15 @@ function Platform({ user, permissions, onLogout }) {
               </select>
             </div>
           </div>
+          <div style={{display:"flex",gap:4,alignItems:"center"}}>
+            <span style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace"}}>WL</span>
+            <select value={filterWL} onChange={e=>setFilterWL(e.target.value)} style={{fontSize:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",color:"#fff",borderRadius:4,padding:"2px 4px",fontFamily:"DM Mono,monospace"}}>
+              {["All","Watch","Buy","Hold","Sell"].map(wls=>(<option key={wls} value={wls} style={{background:"#111122"}}>{wls}</option>))}
+            </select>
+          </div>
           <div style={{fontSize:8,color:"rgba(255,255,255,0.16)",padding:"5px 13px",fontFamily:"DM Mono,monospace",flexShrink:0}}>{filtered.length}/{universe.length} companies ÃÂ· {live} live</div>
           <div style={{flex:1,overflow:"auto",padding:"7px 9px",display:"flex",flexDirection:"column",gap:6}}>
-            {filtered.map(c=><CompanyCard key={c.ticker} c={c} onClick={setSelected} selected={selected?.ticker===c.ticker} loading={c.loading}/>)}
+            {filtered.map(c=><CompanyCard key={c.ticker} c={c} onClick={setSelected} selected={selected?.ticker===c.ticker} loading={c.loading} watchlistStatus={watchlist[c.ticker]} onWatchlist={setWL} analystNote={analystNotes[c.ticker]} onNote={setNote}/>)}
           </div>
         </div>
 
