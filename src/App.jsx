@@ -810,6 +810,7 @@ function UserMenu({ user, permissions, onLogout }) {
                 <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{p.label}</span>
                 <span style={{fontSize:9,color:p.val?"#22c55e":"#ef4444",fontFamily:"DM Mono,monospace"}}>{p.val?"Ã¢ÂÂ":"Ã¢ÂÂ"}</span>
               </div>
+            ))}
             {tab==="notes"&&(
               <div style={{padding:12,display:"flex",flexDirection:"column",gap:10}}>
                 <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>WATCHLIST STATUS</div>
@@ -824,7 +825,6 @@ function UserMenu({ user, permissions, onLogout }) {
                 <div style={{fontSize:9,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>Notes are saved for this session only.</div>
               </div>
             )}
-            ))}
           </div>
           <div style={{padding:"4px 10px 8px",borderBottom:"1px solid rgba(255,255,255,0.07)",marginBottom:6}}>
             <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:4,letterSpacing:"0.06em"}}>FMP API STATUS</div>
