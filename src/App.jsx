@@ -1200,7 +1200,6 @@ function Platform({ user, permissions, onLogout }) {
           )}
         </div>
       </div>
-      {activityLog.length>0&&(<div style={{borderTop:"1px solid rgba(255,255,255,0.06)",padding:"5px 14px",maxHeight:100,overflowY:"auto",flexShrink:0}}><div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",letterSpacing:1,marginBottom:2}}>ACTIVITY LOG</div>{activityLog.slice(0,20).map(e=>(<div key={e.id} style={{display:"flex",gap:8,fontSize:9,fontFamily:"DM Mono,monospace",color:"rgba(255,255,255,0.3)",padding:"2px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}><span style={{color:"rgba(255,255,255,0.15)",flexShrink:0,minWidth:70}}>{e.ts.split(",")[0]}</span><span style={{color:"#c9a84c",flexShrink:0,minWidth:38}}>{e.ticker}</span><span style={{color:"rgba(255,255,255,0.2)",flexShrink:0,minWidth:65}}>[{e.type}]</span><span>{e.detail}</span></div>))}</div>)}
       )}
     </div>
   );
