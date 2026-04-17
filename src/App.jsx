@@ -392,7 +392,7 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
 }
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-function DetailPanel({ c, onClose, permissions }) {
+function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance }) {
   const [tab,setTab]=useState("overview");
   const tabs=["overview","chart","financials","earnings","dividends","balance","cashflow","technicals","news","aramis","notes"];
   const wr = c.bear&&c.base&&c.bull ? ((c.bear.ret*c.bear.prob)+(c.base.ret*c.base.prob)+(c.bull.ret*c.bull.prob))/100 : 0;
@@ -766,32 +766,6 @@ function DetailPanel({ c, onClose, permissions }) {
                 ))}
               </div>
             )}
-            {tab==="notes"&&(
-              <div style={{padding:14,display:"flex",flexDirection:"column",gap:12,overflowY:"auto",maxHeight:500}}>
-
-                <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>WORKFLOW BUCKET</div>
-                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                  {["Watchlist","High Conviction","Needs Review","Rejected"].map(function(st){
-                    const active = watchlistStatus===st;
-                    const col = st==="High Conviction"?"#22c55e":st==="Rejected"?"#ef4444":st==="Needs Review"?"#fbbf24":"#818cf8";
-                    return <button key={st} onClick={function(){if(onWatchlist) onWatchlist(c.ticker,st);}} style={{fontSize:9,padding:"5px 10px",borderRadius:4,border:"1px solid "+(active?col:"rgba(255,255,255,0.12)"),background:active?"rgba(255,255,255,0.07)":"transparent",color:active?col:"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace",fontWeight:700,cursor:"pointer"}}>{st}</button>;
-                  })}
-                  {watchlistStatus?<button onClick={function(){if(onWatchlist) onWatchlist(c.ticker,watchlistStatus);}} style={{fontSize:9,padding:"5px 8px",borderRadius:4,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",cursor:"pointer",marginLeft:"auto"}}>Clear</button>:null}
-                </div>
-
-                <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>ANALYST NOTES</div>
-                <textarea value={analystNote||""} onChange={function(e){if(onNote) onNote(c.ticker,e.target.value);}} placeholder="Research thesis, key observations, risks..." style={{width:"100%",minHeight:90,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",fontFamily:"DM Mono,monospace",fontSize:10,padding:8,resize:"vertical",outline:"none",boxSizing:"border-box"}}/>
-
-                <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>COMPLIANCE NOTES</div>
-                <textarea value={complianceNote||""} onChange={function(e){if(onCompliance) onCompliance(c.ticker,e.target.value);}} placeholder="Compliance flags, restrictions, signoff notes..." style={{width:"100%",minHeight:55,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",fontFamily:"DM Mono,monospace",fontSize:10,padding:8,resize:"none",outline:"none",boxSizing:"border-box"}}/>
-
-                <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>SCREENING SCORES</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
-                  {c.scores ? Object.entries(c.scores).map(function(entry){const k=entry[0];const v=entry[1];return(<div key={k} style={{background:"rgba(255,255,255,0.03)",borderRadius:4,padding:"5px 8px"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:8,color:"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace"}}>{k}</span><span style={{fontSize:8,fontFamily:"DM Mono,monospace",fontWeight:700,color:v>=70?"#22c55e":v>=40?"#fbbf24":"#ef4444"}}>{v}</span></div><div style={{height:3,background:"rgba(255,255,255,0.07)",borderRadius:2}}><div style={{height:"100%",width:v+"%",background:v>=70?"#22c55e":v>=40?"#fbbf24":"#ef4444",borderRadius:2}}/></div></div>);}): <span style={{fontSize:9,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>Scores load when FMP data is available.</span>}
-                </div>
-
-              </div>
-            )}
             <div style={{background:"rgba(255,255,255,0.025)",borderRadius:7,padding:"12px"}}>
               <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:6}}>ANALYST NOTE</div>
               <div style={{fontSize:10,color:"rgba(255,255,255,0.5)",lineHeight:1.6}}>{c.analystNote||"No notes available."}</div>
@@ -800,6 +774,34 @@ function DetailPanel({ c, onClose, permissions }) {
               <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:6}}>DOCUMENT B — IC MEMORANDUM</div>
               <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{c.icStatus==="Approved"?"✓ Filed and approved":c.icStatus==="Conditional"?"⚠ Conditions outstanding":"◦ Memorandum pending — complete Document B before IC"}</div>
             </div>
+          </div>
+        )}
+        {tab==="notes"&&(
+          <div style={{padding:14,display:"flex",flexDirection:"column",gap:12,overflowY:"auto",maxHeight:500}}>
+
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>WORKFLOW BUCKET</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              {["Watchlist","High Conviction","Needs Review","Rejected"].map(function(st){
+                const active = watchlistStatus===st;
+                const col = st==="High Conviction"?"#22c55e":st==="Rejected"?"#ef4444":st==="Needs Review"?"#fbbf24":"#818cf8";
+                return <button key={st} onClick={function(){if(onWatchlist) onWatchlist(c.ticker,st);}} style={{fontSize:9,padding:"5px 10px",borderRadius:4,border:"1px solid "+(active?col:"rgba(255,255,255,0.12)"),background:active?"rgba(255,255,255,0.07)":"transparent",color:active?col:"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace",fontWeight:700,cursor:"pointer"}}>{st}</button>;
+              })}
+              {watchlistStatus?<button onClick={function(){if(onWatchlist) onWatchlist(c.ticker,watchlistStatus);}} style={{fontSize:9,padding:"5px 8px",borderRadius:4,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",cursor:"pointer",marginLeft:"auto"}}>Clear</button>:null}
+            </div>
+
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>ANALYST NOTES</div>
+            <textarea value={analystNote||""} onChange={function(e){if(onNote) onNote(c.ticker,e.target.value);}} placeholder="Research thesis, key observations, risks..." style={{width:"100%",minHeight:90,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",fontFamily:"DM Mono,monospace",fontSize:10,padding:8,resize:"vertical",outline:"none",boxSizing:"border-box"}}/>
+
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>COMPLIANCE NOTES</div>
+            <textarea value={complianceNote||""} onChange={function(e){if(onCompliance) onCompliance(c.ticker,e.target.value);}} placeholder="Compliance flags, restrictions, signoff notes..." style={{width:"100%",minHeight:55,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",fontFamily:"DM Mono,monospace",fontSize:10,padding:8,resize:"none",outline:"none",boxSizing:"border-box"}}/>
+
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>SCREENING SCORES</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+              {c.scores ? Object.entries(c.scores).map(function(entry){const k=entry[0];const v=entry[1];return(<div key={k} style={{background:"rgba(255,255,255,0.03)",borderRadius:4,padding:"5px 8px"}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}><span style={{fontSize:8,color:"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace"}}>{k}</span><span style={{fontSize:8,fontFamily:"DM Mono,monospace",fontWeight:700,color:v>=70?"#22c55e":v>=40?"#fbbf24":"#ef4444"}}>{v}</span></div><div style={{height:3,background:"rgba(255,255,255,0.07)",borderRadius:2}}><div style={{height:"100%",width:v+"%",background:v>=70?"#22c55e":v>=40?"#fbbf24":"#ef4444",borderRadius:2}}/></div></div>);}): <span style={{fontSize:9,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>Scores load when FMP data is available.</span>}
+            </div>
+
+            <button onClick={function(){const scoreAvg=c.scores?Math.round(Object.values(c.scores).reduce(function(a,b){return a+b;},0)/Object.values(c.scores).length):"";const rows=[["Ticker","Name","Price","P/E","ROIC","Score","WL Status","Analyst Note","Compliance Note"],[c.ticker,c.name||"",c.price||"",c.pe||"",c.roic||"",scoreAvg,watchlistStatus||"",analystNote||"",complianceNote||""]];const csv=rows.map(function(r){return r.map(function(v){return'"'+String(v).replace(/"/g,'""')+'"';}).join(",");}).join("\n");const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);a.download=c.ticker+"_notes.csv";a.click();}} style={{alignSelf:"flex-start",fontSize:9,padding:"6px 12px",borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace",cursor:"pointer",marginTop:4}}>Export CSV</button>
+
           </div>
         )}
       </div>
@@ -1184,7 +1186,7 @@ function Platform({ user, permissions, onLogout }) {
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
           {selected ? (
             <div style={{flex:1,overflow:"hidden",padding:14}}>
-              <DetailPanel c={selected} onClose={()=>setSelected(null)} permissions={permissions}/>
+              <DetailPanel c={selected} onClose={()=>setSelected(null)} permissions={permissions} watchlistStatus={watchlist[selected.ticker]} onWatchlist={setWL} analystNote={analystNotes[selected.ticker]} onNote={setNote} complianceNote={complianceNotes[selected.ticker]} onCompliance={setCompliance}/>
             </div>
           ) : (
             <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:40,gap:28,position:"relative",overflow:"hidden"}}>
