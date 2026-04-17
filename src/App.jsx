@@ -353,7 +353,7 @@ function DisciplineRadar({ scores, size=195 }) {
 }
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ COMPANY CARD Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStatus, onWatchlist, analystNote, onNote }) {
+function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, onLogActivity }) {
   const wr = c.bear && c.base && c.bull
     ? ((c.bear.ret*c.bear.prob)+(c.base.ret*c.base.prob)+(c.bull.ret*c.bull.prob))/100
     : null;
@@ -365,7 +365,7 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
         <div>
           <div style={{fontSize:14,fontWeight:800,color:"#fff",fontFamily:"Syne,sans-serif",lineHeight:1}}>{c.ticker}</div>
-          {watchlistStatus&&<span style={{fontSize:7,padding:"1px 5px",borderRadius:3,fontFamily:"DM Mono,monospace",fontWeight:700,marginTop:2,display:"inline-block",background:watchlistStatus==="Buy"?"rgba(34,197,94,0.25)":watchlistStatus==="Sell"?"rgba(239,68,68,0.25)":watchlistStatus==="Hold"?"rgba(251,191,36,0.25)":"rgba(99,102,241,0.25)",color:watchlistStatus==="Buy"?"#22c55e":watchlistStatus==="Sell"?"#ef4444":watchlistStatus==="Hold"?"#fbbf24":"#818cf8"}}>{watchlistStatus}</span>}
+          {watchlistStatus&&<span style={{fontSize:7,padding:"1px 5px",borderRadius:3,fontFamily:"DM Mono,monospace",fontWeight:700,marginTop:2,display:"inline-block",background:watchlistStatus==="High Conviction"?"rgba(34,197,94,0.25)":watchlistStatus==="Rejected"?"rgba(239,68,68,0.25)":watchlistStatus==="Needs Review"?"rgba(251,191,36,0.25)":"rgba(99,102,241,0.25)",color:watchlistStatus==="High Conviction"?"#22c55e":watchlistStatus==="Rejected"?"#ef4444":watchlistStatus==="Needs Review"?"#fbbf24":"#818cf8"}}>{watchlistStatus}</span>}
           <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",marginTop:2,fontFamily:"DM Mono,monospace"}}>{c.exchange} ÃÂ· {c.country||"Ã¢ÂÂ"}</div>
         </div>
         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
@@ -812,17 +812,41 @@ function UserMenu({ user, permissions, onLogout }) {
               </div>
             ))}
             {tab==="notes"&&(
-              <div style={{padding:12,display:"flex",flexDirection:"column",gap:10}}>
-                <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>WATCHLIST STATUS</div>
-                <div style={{display:"flex",gap:6}}>
-                  {["Watch","Buy","Hold","Sell"].map(st=>(
-                    <button key={st} onClick={()=>onWatchlist&&onWatchlist(c.ticker,st)} style={{fontSize:9,padding:"4px 10px",borderRadius:4,border:"1px solid",fontFamily:"DM Mono,monospace",fontWeight:700,cursor:"pointer",borderColor:watchlistStatus===st?(st==="Buy"?"#22c55e":st==="Sell"?"#ef4444":st==="Hold"?"#fbbf24":"#818cf8"):"rgba(255,255,255,0.12)",background:watchlistStatus===st?(st==="Buy"?"rgba(34,197,94,0.18)":st==="Sell"?"rgba(239,68,68,0.18)":st==="Hold"?"rgba(251,191,36,0.18)":"rgba(129,140,248,0.18)"):"transparent",color:watchlistStatus===st?(st==="Buy"?"#22c55e":st==="Sell"?"#ef4444":st==="Hold"?"#fbbf24":"#818cf8"):"rgba(255,255,255,0.4)"}}>{st}</button>
-                  ))}
-                  {watchlistStatus&&<button onClick={()=>onWatchlist&&onWatchlist(c.ticker,watchlistStatus)} style={{fontSize:9,padding:"4px 8px",borderRadius:4,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",cursor:"pointer",marginLeft:"auto"}}>Clear</button>}
+              <div style={{padding:12,display:"flex",flexDirection:"column",gap:12,overflowY:"auto",maxHeight:480}}>
+                <div>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",letterSpacing:1,marginBottom:6}}>WORKFLOW BUCKET</div>
+                  <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                    {["Watchlist","High Conviction","Needs Review","Rejected"].map(st=>{
+                      const isActive=watchlistStatus===st;
+                      const col=st==="High Conviction"?"#22c55e":st==="Rejected"?"#ef4444":st==="Needs Review"?"#fbbf24":"#818cf8";
+                      return <button key={st} onClick={()=>onWatchlist&&onWatchlist(c.ticker,st)} style={{fontSize:9,padding:"5px 10px",borderRadius:4,border:"1px solid "+(isActive?col:"rgba(255,255,255,0.1)"),fontFamily:"DM Mono,monospace",fontWeight:700,cursor:"pointer",background:isActive?"rgba(255,255,255,0.07)":"transparent",color:isActive?col:"rgba(255,255,255,0.35)"}}>{st}</button>;
+                    })}
+                    {watchlistStatus&&<button onClick={()=>onWatchlist&&onWatchlist(c.ticker,watchlistStatus)} style={{fontSize:9,padding:"5px 8px",borderRadius:4,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace",cursor:"pointer",marginLeft:"auto"}}>✕ Clear</button>}
+                  </div>
                 </div>
-                <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1,marginTop:4}}>ANALYST NOTES</div>
-                <textarea value={analystNote||""} onChange={e=>onNote&&onNote(c.ticker,e.target.value)} placeholder="Add your research notes here..." style={{width:"100%",minHeight:120,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:6,color:"#fff",fontFamily:"DM Mono,monospace",fontSize:11,padding:10,resize:"vertical",outline:"none",boxSizing:"border-box"}}/>
-                <div style={{fontSize:9,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>Notes are saved for this session only.</div>
+                <div>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",letterSpacing:1,marginBottom:6}}>ANALYST NOTES</div>
+                  <textarea value={analystNote||""} onChange={e=>onNote&&onNote(c.ticker,e.target.value)} onBlur={()=>analystNote&&onLogActivity&&onLogActivity(c.ticker,"NOTE","Notes updated")} placeholder="Research thesis, key observations, risks..." style={{width:"100%",minHeight:90,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",fontFamily:"DM Mono,monospace",fontSize:10,padding:8,resize:"vertical",outline:"none",boxSizing:"border-box",lineHeight:1.6}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",letterSpacing:1,marginBottom:6}}>SCREENING BREAKDOWN</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+                    {[{label:"Quality",val:c.scores?.quality},{label:"Value",val:c.scores?.valuation},{label:"Growth",val:c.scores?.growth},{label:"Momentum",val:c.scores?.momentum},{label:"Fin. Health",val:c.scores?.health},{label:"Overall",val:c.scores?Math.round(Object.values(c.scores).reduce((a,b)=>a+b,0)/Object.values(c.scores).length):null}].map(({label,val})=>(
+                      <div key={label} style={{background:"rgba(255,255,255,0.03)",borderRadius:4,padding:"5px 8px"}}>
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                          <span style={{fontSize:8,color:"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace"}}>{label}</span>
+                          <span style={{fontSize:8,color:val>=70?"#22c55e":val>=40?"#fbbf24":"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",fontWeight:700}}>{val!=null?val:"—"}</span>
+                        </div>
+                        <div style={{height:3,background:"rgba(255,255,255,0.07)",borderRadius:2}}><div style={{height:"100%",width:(val||0)+"%",background:val>=70?"#22c55e":val>=40?"#fbbf24":"#ef4444",borderRadius:2}}/></div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",letterSpacing:1,marginBottom:6}}>COMPLIANCE NOTES</div>
+                  <textarea value={complianceNote||""} onChange={e=>onCompliance&&onCompliance(c.ticker,e.target.value)} placeholder="Compliance flags, restrictions, signoff notes..." style={{width:"100%",minHeight:55,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",fontFamily:"DM Mono,monospace",fontSize:10,padding:8,resize:"none",outline:"none",boxSizing:"border-box"}}/>
+                </div>
+                <button onClick={()=>{const rows=[["Field","Value"],["Ticker",c.ticker],["Name",c.name||""],["Bucket",watchlistStatus||"—"],["IC Status",c.icStatus||"—"],["Tier",c.riskTier||"—"],["P/E",c.pe||"—"],["ROIC",c.roic!=null?c.roic+"%":"—"],["Op Margin",c.opMargin!=null?c.opMargin+"%":"—"],["Net Margin",c.netMargin!=null?c.netMargin+"%":"—"],["Analyst Notes",analystNote||""],["Compliance Notes",complianceNote||""]];const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\n");const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);a.download=c.ticker+"_aramis.csv";a.click();onLogActivity&&onLogActivity(c.ticker,"EXPORT","CSV exported");}} style={{fontSize:9,padding:"6px 14px",borderRadius:4,border:"1px solid rgba(201,168,76,0.3)",background:"rgba(201,168,76,0.08)",color:"#c9a84c",fontFamily:"DM Mono,monospace",fontWeight:700,cursor:"pointer",alignSelf:"flex-start"}}>↓ EXPORT CSV</button>
               </div>
             )}
           </div>
@@ -959,7 +983,15 @@ function Platform({ user, permissions, onLogout }) {
   const [watchlist, setWatchlist] = useState({});
   const [analystNotes, setAnalystNotes] = useState({});
   const [filterWL, setFilterWL] = useState("All");
-  const setWL = useCallback((ticker, status) => setWatchlist(prev => ({...prev, [ticker]: status === prev[ticker] ? undefined : status})), []);
+  const [activityLog, setActivityLog] = useState([]);
+  const [savedFilters, setSavedFilters] = useState([]);
+  const [complianceNotes, setComplianceNotes] = useState({});
+  const logActivity = useCallback((ticker, type, detail) => setActivityLog(prev => [{id:Date.now(), ticker, type, detail, ts: new Date().toLocaleString()},...prev].slice(0,200)), []);
+  const setWL = useCallback((ticker, status) => {
+    const next = status === watchlist[ticker] ? undefined : status;
+    setWatchlist(prev => ({...prev, [ticker]: next}));
+    if (next) logActivity(ticker, "WATCHLIST", ticker + " → " + next);
+  }, [watchlist, logActivity]);
   const setNote = useCallback((ticker, note) => setAnalystNotes(prev => ({...prev, [ticker]: note})), []);
 
   // Load all seed tickers on mount
@@ -1157,12 +1189,12 @@ function Platform({ user, permissions, onLogout }) {
           <div style={{display:"flex",gap:4,alignItems:"center"}}>
             <span style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace"}}>WL</span>
             <select value={filterWL} onChange={e=>setFilterWL(e.target.value)} style={{fontSize:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",color:"#fff",borderRadius:4,padding:"2px 4px",fontFamily:"DM Mono,monospace"}}>
-              {["All","Watch","Buy","Hold","Sell"].map(wls=>(<option key={wls} value={wls} style={{background:"#111122"}}>{wls}</option>))}
+              {["All","Watchlist","High Conviction","Needs Review","Rejected"].map(wls=>(<option key={wls} value={wls} style={{background:"#111122"}}>{wls}</option>))}
             </select>
           </div>
           <div style={{fontSize:8,color:"rgba(255,255,255,0.16)",padding:"5px 13px",fontFamily:"DM Mono,monospace",flexShrink:0}}>{filtered.length}/{universe.length} companies ÃÂ· {live} live</div>
           <div style={{flex:1,overflow:"auto",padding:"7px 9px",display:"flex",flexDirection:"column",gap:6}}>
-            {filtered.map(c=><CompanyCard key={c.ticker} c={c} onClick={setSelected} selected={selected?.ticker===c.ticker} loading={c.loading} watchlistStatus={watchlist[c.ticker]} onWatchlist={setWL} analystNote={analystNotes[c.ticker]} onNote={setNote}/>)}
+            {filtered.map(c=><CompanyCard key={c.ticker} c={c} onClick={setSelected} selected={selected?.ticker===c.ticker} loading={c.loading} watchlistStatus={watchlist[c.ticker]} onWatchlist={setWL} analystNote={analystNotes[c.ticker]} onNote={setNote} complianceNote={complianceNotes[c.ticker]} onCompliance={(t,n)=>{setComplianceNotes(prev=>({...prev,[t]:n}));logActivity(t,"COMPLIANCE","Note updated");}} onLogActivity={logActivity}/>)}
           </div>
         </div>
 
@@ -1200,7 +1232,21 @@ function Platform({ user, permissions, onLogout }) {
                 </div>
               )}
             </div>
-          )}
+
+        {/* ACTIVITY LOG */}
+        {activityLog.length>0&&(
+          <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",padding:"6px 16px",maxHeight:110,overflowY:"auto",flexShrink:0}}>
+            <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",letterSpacing:1,marginBottom:3}}>ACTIVITY LOG</div>
+            {activityLog.slice(0,15).map(e=>(
+              <div key={e.id} style={{display:"flex",gap:8,fontSize:9,fontFamily:"DM Mono,monospace",color:"rgba(255,255,255,0.3)",padding:"1px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                <span style={{color:"rgba(255,255,255,0.15)",flexShrink:0,minWidth:70}}>{e.ts.split(",")[0]}</span>
+                <span style={{color:"#c9a84c",flexShrink:0,minWidth:40}}>{e.ticker}</span>
+                <span style={{color:"rgba(255,255,255,0.2)",flexShrink:0,minWidth:65}}>[{e.type}]</span>
+                <span>{e.detail}</span>
+              </div>
+            ))}
+          </div>
+        )}          )}
         </div>
       </div>
       )}
