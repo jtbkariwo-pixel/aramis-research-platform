@@ -1153,8 +1153,8 @@ function Platform({ user, permissions, onLogout }) {
               </select>
             </div>
           </div>
-          <div style={{fontSize:8,color:"rgba(255,255,255,0.16)",padding:"5px 13px",fontFamily:"DM Mono,monospace",flexShrink:0}}>WL
-            </span>
+          <div style={{display:"flex",gap:4,alignItems:"center"}}>
+            <span style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace"}}>WL</span>
             <select value={filterWL} onChange={e=>setFilterWL(e.target.value)} style={{fontSize:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",color:"#fff",borderRadius:4,padding:"2px 4px",fontFamily:"DM Mono,monospace"}}>{["All","Watchlist","High Conviction","Needs Review","Rejected"].map(wls=>(<option key={wls} value={wls} style={{background:"#111122"}}>{wls}</option>))}</select>
           </div>
           <div style={{fontSize:8,color:"rgba(255,255,255,0.16)",padding:"5px 13px",fontFamily:"DM Mono,monospace",flexShrink:0}}>{filtered.length}/{universe.length} companies ÃÂ· {live} live</div>
