@@ -353,7 +353,7 @@ function DisciplineRadar({ scores, size=195 }) {
 }
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ COMPANY CARD Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, onLogActivity }) {
+function CompanyCard({ c, onClick, selected, loading: cardLoading }) {
   const wr = c.bear && c.base && c.bull
     ? ((c.bear.ret*c.bear.prob)+(c.base.ret*c.base.prob)+(c.bull.ret*c.bull.prob))/100
     : null;
@@ -365,7 +365,6 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
         <div>
           <div style={{fontSize:14,fontWeight:800,color:"#fff",fontFamily:"Syne,sans-serif",lineHeight:1}}>{c.ticker}</div>
-          {watchlistStatus&&<span style={{fontSize:7,padding:"1px 5px",borderRadius:3,fontFamily:"DM Mono,monospace",fontWeight:700,marginTop:2,display:"inline-block",background:watchlistStatus==="High Conviction"?"rgba(34,197,94,0.25)":watchlistStatus==="Rejected"?"rgba(239,68,68,0.25)":watchlistStatus==="Needs Review"?"rgba(251,191,36,0.25)":"rgba(99,102,241,0.25)",color:watchlistStatus==="High Conviction"?"#22c55e":watchlistStatus==="Rejected"?"#ef4444":watchlistStatus==="Needs Review"?"#fbbf24":"#818cf8"}}>{watchlistStatus}</span>}
           <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",marginTop:2,fontFamily:"DM Mono,monospace"}}>{c.exchange} ÃÂ· {c.country||"Ã¢ÂÂ"}</div>
         </div>
         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
@@ -394,7 +393,7 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function DetailPanel({ c, onClose, permissions }) {
   const [tab,setTab]=useState("overview");
-  const tabs=["overview","chart","financials","earnings","dividends","balance","cashflow","technicals","news","aramis","notes"];
+  const tabs=["overview","chart","financials","earnings","dividends","balance","cashflow","technicals","news","aramis"];
   const wr = c.bear&&c.base&&c.bull ? ((c.bear.ret*c.bear.prob)+(c.base.ret*c.base.prob)+(c.bull.ret*c.bull.prob))/100 : 0;
   const spread = (c.roic||0) - (c.wacc||8);
   const Stat=({label,value,sub,color})=>(
@@ -810,7 +809,6 @@ function UserMenu({ user, permissions, onLogout }) {
                 <span style={{fontSize:10,color:"rgba(255,255,255,0.4)"}}>{p.label}</span>
                 <span style={{fontSize:9,color:p.val?"#22c55e":"#ef4444",fontFamily:"DM Mono,monospace"}}>{p.val?"Ã¢ÂÂ":"Ã¢ÂÂ"}</span>
               </div>
-            ))}
             {tab==="notes"&&(
               <div style={{padding:12,display:"flex",flexDirection:"column",gap:12,overflowY:"auto",maxHeight:480}}>
                 <div>
@@ -849,6 +847,7 @@ function UserMenu({ user, permissions, onLogout }) {
                 <button onClick={()=>{const rows=[["Field","Value"],["Ticker",c.ticker],["Name",c.name||""],["Bucket",watchlistStatus||"—"],["IC Status",c.icStatus||"—"],["Tier",c.riskTier||"—"],["P/E",c.pe||"—"],["ROIC",c.roic!=null?c.roic+"%":"—"],["Op Margin",c.opMargin!=null?c.opMargin+"%":"—"],["Net Margin",c.netMargin!=null?c.netMargin+"%":"—"],["Analyst Notes",analystNote||""],["Compliance Notes",complianceNote||""]];const csv=rows.map(r=>r.map(v=>'"'+String(v).replace(/"/g,'""')+'"').join(",")).join("\n");const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);a.download=c.ticker+"_aramis.csv";a.click();onLogActivity&&onLogActivity(c.ticker,"EXPORT","CSV exported");}} style={{fontSize:9,padding:"6px 14px",borderRadius:4,border:"1px solid rgba(201,168,76,0.3)",background:"rgba(201,168,76,0.08)",color:"#c9a84c",fontFamily:"DM Mono,monospace",fontWeight:700,cursor:"pointer",alignSelf:"flex-start"}}>↓ EXPORT CSV</button>
               </div>
             )}
+            ))}
           </div>
           <div style={{padding:"4px 10px 8px",borderBottom:"1px solid rgba(255,255,255,0.07)",marginBottom:6}}>
             <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:4,letterSpacing:"0.06em"}}>FMP API STATUS</div>
@@ -982,17 +981,13 @@ function Platform({ user, permissions, onLogout }) {
   const [apiStatus, setApiStatus] = useState("loading"); // loading | ok | error | demo
   const [watchlist, setWatchlist] = useState({});
   const [analystNotes, setAnalystNotes] = useState({});
-  const [filterWL, setFilterWL] = useState("All");
-  const [activityLog, setActivityLog] = useState([]);
-  const [savedFilters, setSavedFilters] = useState([]);
   const [complianceNotes, setComplianceNotes] = useState({});
-  const logActivity = useCallback((ticker, type, detail) => setActivityLog(prev => [{id:Date.now(), ticker, type, detail, ts: new Date().toLocaleString()},...prev].slice(0,200)), []);
-  const setWL = useCallback((ticker, status) => {
-    const next = status === watchlist[ticker] ? undefined : status;
-    setWatchlist(prev => ({...prev, [ticker]: next}));
-    if (next) logActivity(ticker, "WATCHLIST", ticker + " → " + next);
-  }, [watchlist, logActivity]);
-  const setNote = useCallback((ticker, note) => setAnalystNotes(prev => ({...prev, [ticker]: note})), []);
+  const [activityLog, setActivityLog] = useState([]);
+  const [filterWL, setFilterWL] = useState("All");
+  const logActivity = useCallback((ticker, type, detail) => setActivityLog(prev => [{id:Date.now(),ticker,type,detail,ts:new Date().toLocaleString()},...prev].slice(0,200)), []);
+  const setWL = useCallback((ticker, status) => { const next = status === watchlist[ticker] ? undefined : status; setWatchlist(prev=>({...prev,[ticker]:next})); if(next) logActivity(ticker,"WATCHLIST",ticker+" → "+next); }, [watchlist, logActivity]);
+  const setNote = useCallback((ticker, note) => setAnalystNotes(prev=>({...prev,[ticker]:note})), []);
+  const setCompliance = useCallback((ticker, note) => { setComplianceNotes(prev=>({...prev,[ticker]:note})); logActivity(ticker,"COMPLIANCE","Note updated"); }, [logActivity]);
 
   // Load all seed tickers on mount
   useEffect(() => {
@@ -1186,15 +1181,9 @@ function Platform({ user, permissions, onLogout }) {
               </select>
             </div>
           </div>
-          <div style={{display:"flex",gap:4,alignItems:"center"}}>
-            <span style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace"}}>WL</span>
-            <select value={filterWL} onChange={e=>setFilterWL(e.target.value)} style={{fontSize:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",color:"#fff",borderRadius:4,padding:"2px 4px",fontFamily:"DM Mono,monospace"}}>
-              {["All","Watchlist","High Conviction","Needs Review","Rejected"].map(wls=>(<option key={wls} value={wls} style={{background:"#111122"}}>{wls}</option>))}
-            </select>
-          </div>
           <div style={{fontSize:8,color:"rgba(255,255,255,0.16)",padding:"5px 13px",fontFamily:"DM Mono,monospace",flexShrink:0}}>{filtered.length}/{universe.length} companies ÃÂ· {live} live</div>
           <div style={{flex:1,overflow:"auto",padding:"7px 9px",display:"flex",flexDirection:"column",gap:6}}>
-            {filtered.map(c=><CompanyCard key={c.ticker} c={c} onClick={setSelected} selected={selected?.ticker===c.ticker} loading={c.loading} watchlistStatus={watchlist[c.ticker]} onWatchlist={setWL} analystNote={analystNotes[c.ticker]} onNote={setNote} complianceNote={complianceNotes[c.ticker]} onCompliance={(t,n)=>{setComplianceNotes(prev=>({...prev,[t]:n}));logActivity(t,"COMPLIANCE","Note updated");}} onLogActivity={logActivity}/>)}
+            {filtered.map(c=><CompanyCard key={c.ticker} c={c} onClick={setSelected} selected={selected?.ticker===c.ticker} loading={c.loading}/>)}
           </div>
         </div>
 
@@ -1232,24 +1221,22 @@ function Platform({ user, permissions, onLogout }) {
                 </div>
               )}
             </div>
-
-        {/* ACTIVITY LOG */}
-        {activityLog.length>0&&(
-          <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",padding:"6px 16px",maxHeight:110,overflowY:"auto",flexShrink:0}}>
-            <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",letterSpacing:1,marginBottom:3}}>ACTIVITY LOG</div>
-            {activityLog.slice(0,15).map(e=>(
-              <div key={e.id} style={{display:"flex",gap:8,fontSize:9,fontFamily:"DM Mono,monospace",color:"rgba(255,255,255,0.3)",padding:"1px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
-                <span style={{color:"rgba(255,255,255,0.15)",flexShrink:0,minWidth:70}}>{e.ts.split(",")[0]}</span>
-                <span style={{color:"#c9a84c",flexShrink:0,minWidth:40}}>{e.ticker}</span>
-                <span style={{color:"rgba(255,255,255,0.2)",flexShrink:0,minWidth:65}}>[{e.type}]</span>
-                <span>{e.detail}</span>
-              </div>
-            ))}
-          </div>
-        )}
-      )}
+          )}
         </div>
       </div>
+      {activityLog.length>0&&(
+        <div style={{borderTop:"1px solid rgba(255,255,255,0.06)",padding:"5px 14px",maxHeight:100,overflowY:"auto",flexShrink:0}}>
+          <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",letterSpacing:1,marginBottom:2}}>ACTIVITY LOG</div>
+          {activityLog.slice(0,20).map(e=>(
+            <div key={e.id} style={{display:"flex",gap:8,fontSize:9,fontFamily:"DM Mono,monospace",color:"rgba(255,255,255,0.3)",padding:"2px 0",borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+              <span style={{color:"rgba(255,255,255,0.15)",flexShrink:0,minWidth:70}}>{e.ts.split(",")[0]}</span>
+              <span style={{color:"#c9a84c",flexShrink:0,minWidth:38}}>{e.ticker}</span>
+              <span style={{color:"rgba(255,255,255,0.2)",flexShrink:0,minWidth:65}}>[{e.type}]</span>
+              <span>{e.detail}</span>
+            </div>
+          ))}
+        </div>
+      )}
       )}
     </div>
   );
