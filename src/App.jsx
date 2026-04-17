@@ -1246,7 +1246,8 @@ function Platform({ user, permissions, onLogout }) {
               </div>
             ))}
           </div>
-        )}          )}
+        )}
+      )}
         </div>
       </div>
       )}
