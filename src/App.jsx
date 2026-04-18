@@ -166,14 +166,33 @@ function transformFMPData(ticker, raw) {
   const revenue        = i0.revenue || 0;
   const prevRevenue    = i1.revenue || revenue;
   const revenueGrowth  = prevRevenue > 0 ? Math.round(((revenue - prevRevenue) / prevRevenue) * 100) : 0;
-  const opMargin       = i0.operatingIncomeRatio ? Math.round(i0.operatingIncomeRatio * 100) : (m.operatingProfitMargin ? Math.round(m.operatingProfitMargin * 100) : 0);
-  const netMargin      = i0.netIncomeRatio ? Math.round(i0.netIncomeRatio * 100) : 0;
-  const fcf            = cf.freeCashFlow || (cf.operatingCashFlow - cf.capitalExpenditure) || 0;
+  // opMargin: try ratio field, then compute from raw values, then key-metrics fallback
+  const opMarginRaw    = i0.operatingIncomeRatio != null ? i0.operatingIncomeRatio
+                         : (i0.operatingIncome != null && revenue > 0 ? i0.operatingIncome / revenue : null);
+  const opMargin       = opMarginRaw != null ? Math.round(opMarginRaw * 100)
+                         : (m.operatingProfitMargin ? Math.round(m.operatingProfitMargin * 100) : 0);
+  // netMargin: same pattern
+  const netMarginRaw   = i0.netIncomeRatio != null ? i0.netIncomeRatio
+                         : (i0.netIncome != null && revenue > 0 ? i0.netIncome / revenue : null);
+  const netMargin      = netMarginRaw != null ? Math.round(netMarginRaw * 100) : 0;
+  // FCF: capex is stored as negative in FMP, so operatingCF + capex = FCF
+  const fcf            = cf.freeCashFlow != null ? cf.freeCashFlow : ((cf.operatingCashFlow || 0) + (cf.capitalExpenditure || 0));
   const fcfMargin      = revenue > 0 ? Math.round((fcf / revenue) * 100) : 0;
-  const roic           = m.roic           ? Math.round(m.roic * 100)           : 0;
+  // ROIC: try key-metrics (multiple field names), then compute from B/S + I/S
+  const roicFromM      = m.roic ? Math.round(m.roic * 100) : (m.returnOnInvestedCapital ? Math.round(m.returnOnInvestedCapital * 100) : 0);
+  const netIncomeVal   = i0.netIncome || 0;
+  const totalEquity    = b.totalStockholdersEquity || b.totalEquity || 0;
+  const totalDebt      = (b.longTermDebt || 0) + (b.shortTermDebt || b.shortTermBorrowings || 0);
+  const investedCap    = totalEquity + totalDebt;
+  const roicCalc       = investedCap > 0 ? Math.round((netIncomeVal / investedCap) * 100) : 0;
+  const roic           = roicFromM || roicCalc;
   const netDebt        = b.netDebt        ? Math.round(b.netDebt / 1e9)        : 0;
-  const pe             = q.pe             ? Math.round(q.pe)                   : (m.peRatio ? Math.round(m.peRatio) : 0);
-  const evEbitda       = m.enterpriseValueOverEBITDA ? Math.round(m.enterpriseValueOverEBITDA) : 0;
+  // PE: quote.pe first, then multiple key-metrics field name variants
+  const peRaw          = q.pe || q.priceEarningsRatio || m.peRatio || m.priceEarningsRatio || 0;
+  const pe             = peRaw > 0 ? Math.round(peRaw) : 0;
+  // EV/EBITDA: multiple field name variants across FMP API versions
+  const evEbitdaRaw    = m.enterpriseValueOverEBITDA || m.evToEbitda || m.evEbitda || 0;
+  const evEbitda       = evEbitdaRaw > 0 ? Math.round(evEbitdaRaw) : 0;
   const mktCap         = q.marketCap || p.mktCap || 0;
   const mktCapFmt      = mktCap >= 1e12 ? `$${(mktCap/1e12).toFixed(1)}T` : mktCap >= 1e9 ? `$${(mktCap/1e9).toFixed(0)}B` : `$${(mktCap/1e6).toFixed(0)}M`;
   const price          = q.price || p.price || 0;
@@ -361,7 +380,8 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
   return (
     <div onClick={()=>onClick(c)} style={{background:selected?"rgba(201,168,76,0.06)":"rgba(255,255,255,0.02)",border:`1px solid ${selected?"rgba(201,168,76,0.28)":"rgba(255,255,255,0.06)"}`,borderRadius:10,padding:"13px",cursor:"pointer",transition:"all 0.15s",display:"flex",flexDirection:"column",gap:8,position:"relative",opacity:cardLoading?0.6:1}}>
       {cardLoading && <div style={{position:"absolute",top:8,right:8,width:8,height:8,borderRadius:"50%",border:"1.5px solid rgba(201,168,76,0.3)",borderTopColor:GOLD,animation:"spin 0.7s linear infinite"}}/>}
-      {c.isLive && <div style={{position:"absolute",top:8,right:8,width:6,height:6,borderRadius:"50%",background:"#22c55e"}} title="Live FMP data"/>}
+      {c.dataUnavailable && !cardLoading && <div style={{position:"absolute",top:6,right:6,fontSize:7,padding:"1px 5px",borderRadius:3,background:"rgba(239,68,68,0.15)",color:"#ef4444",fontFamily:"DM Mono,monospace",border:"1px solid rgba(239,68,68,0.25)"}}>Data unavailable</div>}
+      {c.isLive && !c.dataUnavailable && <div style={{position:"absolute",top:8,right:8,width:6,height:6,borderRadius:"50%",background:"#22c55e"}} title="Live FMP data"/>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
         <div>
           <div style={{fontSize:14,fontWeight:800,color:"#fff",fontFamily:"Syne,sans-serif",lineHeight:1}}>{c.ticker}</div>
@@ -392,9 +412,15 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
 }
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance }) {
+function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, watchlistEntry, onWatchlistEntry, conviction, onConviction, activityLogs, onLogActivity }) {
   const [tab,setTab]=useState("overview");
-  const tabs=["overview","chart","financials","earnings","dividends","balance","cashflow","technicals","news","aramis","notes"];
+  const tabs=["overview","chart","financials","earnings","dividends","balance","cashflow","technicals","news","aramis","conviction","notes","log"];
+  const [noteSaved, setNoteSaved] = useState(false);
+  const noteSaveTimer = useRef(null);
+  const [convSaved, setConvSaved] = useState(false);
+  const convSaveTimer = useRef(null);
+  const wEntry = watchlistEntry || {};
+  const conv = conviction || {};
   const wr = c.bear&&c.base&&c.bull ? ((c.bear.ret*c.bear.prob)+(c.base.ret*c.base.prob)+(c.bull.ret*c.bull.prob))/100 : 0;
   const spread = (c.roic||0) - (c.wacc||8);
   const Stat=({label,value,sub,color})=>(
@@ -453,10 +479,30 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
                 </div>
               )}
             </div>
+            <div style={{background:"rgba(201,168,76,0.04)",border:"1px solid rgba(201,168,76,0.12)",borderRadius:8,padding:"12px 14px"}}>
+              <div style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace",marginBottom:8,letterSpacing:"0.06em"}}>WATCHLIST</div>
+              <div style={{display:"flex",gap:4,flexWrap:"wrap",marginBottom:8}}>
+                {["BUY","HOLD","SELL","WATCH"].map(ln=>{
+                  const active = wEntry.lane === ln;
+                  const lc = ln==="BUY"?"#22c55e":ln==="HOLD"?"#60a5fa":ln==="SELL"?"#ef4444":"#f59e0b";
+                  return <button key={ln} onClick={()=>{const d={...wEntry,lane:active?undefined:ln};if(onWatchlistEntry)onWatchlistEntry(c.ticker,d);if(onLogActivity)onLogActivity(c.ticker,"WLLANE",`Lane → ${ln}`);}} style={{fontSize:9,padding:"4px 10px",borderRadius:4,border:`1px solid ${active?lc:"rgba(255,255,255,0.1)"}`,background:active?`${lc}18`:"transparent",color:active?lc:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",fontWeight:700,cursor:"pointer"}}>{ln}</button>;
+                })}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                <div>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginBottom:4}}>STRIKE / ENTRY TARGET</div>
+                  <input type="number" step="0.01" placeholder="$0.00" value={wEntry.buyTarget||""} onChange={e=>{const d={...wEntry,buyTarget:e.target.value||null};if(onWatchlistEntry)onWatchlistEntry(c.ticker,d);}} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:5,padding:"6px 8px",color:"#fff",fontSize:11,fontFamily:"DM Mono,monospace",outline:"none",boxSizing:"border-box"}}/>
+                </div>
+                <div>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginBottom:4}}>SELL / EXIT TARGET</div>
+                  <input type="number" step="0.01" placeholder="$0.00" value={wEntry.sellTarget||""} onChange={e=>{const d={...wEntry,sellTarget:e.target.value||null};if(onWatchlistEntry)onWatchlistEntry(c.ticker,d);}} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:5,padding:"6px 8px",color:"#fff",fontSize:11,fontFamily:"DM Mono,monospace",outline:"none",boxSizing:"border-box"}}/>
+                </div>
+              </div>
+            </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
               {c.ceo&&<Stat label="CEO" value={c.ceo} sub={c.employees?`${c.employees?.toLocaleString()} employees`:""}/>}
               {c.website&&<Stat label="Website" value={c.website?.replace("https://","").replace("http://","").split("/")[0]}/>}
-              <Stat label="Exchange" value={c.exchange||"Ã¢ÂÂ"} sub={c.country}/>
+              <Stat label="Exchange" value={c.exchange||"—"} sub={c.country}/>
             </div>
           </div>
         )}
@@ -773,6 +819,40 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             <div style={{background:"rgba(255,255,255,0.025)",borderRadius:7,padding:"12px"}}>
               <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:6}}>DOCUMENT B — IC MEMORANDUM</div>
               <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>{c.icStatus==="Approved"?"✓ Filed and approved":c.icStatus==="Conditional"?"⚠ Conditions outstanding":"◦ Memorandum pending — complete Document B before IC"}</div>
+            <div style={{background:"rgba(255,255,255,0.025)",borderRadius:8,padding:"13px"}}>
+              <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:9,letterSpacing:"0.06em"}}>ARAMIS RANKING — PILLAR BREAKDOWN</div>
+              {(()=>{
+                const r=calcAramisScore(c);
+                if(!r)return<div style={{fontSize:9,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>Score calculated when live data is available.</div>;
+                const PILLARS=[
+                  {k:"quality",label:"Quality",w:25},
+                  {k:"value",label:"Value",w:20},
+                  {k:"growth",label:"Growth",w:20},
+                  {k:"momentum",label:"Momentum",w:15},
+                  {k:"health",label:"Fin. Health",w:20},
+                ];
+                return(
+                  <table style={{width:"100%",fontSize:9,borderCollapse:"collapse",fontFamily:"DM Mono,monospace"}}>
+                    <thead><tr>{["Pillar","Score /20","Weight","Contribution"].map(h=><th key={h} style={{textAlign:"left",padding:"4px 8px",color:"rgba(255,255,255,0.35)",fontWeight:500,borderBottom:"1px solid rgba(255,255,255,0.07)",fontSize:8}}>{h}</th>)}</tr></thead>
+                    <tbody>
+                      {PILLARS.map(p=>(
+                        <tr key={p.k} style={{borderBottom:"1px solid rgba(255,255,255,0.04)"}}>
+                          <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.6)"}}>{p.label}</td>
+                          <td style={{padding:"5px 8px",color:r[p.k]>=14?"#22c55e":r[p.k]>=8?GOLD:"rgba(255,255,255,0.4)",fontWeight:700}}>{r[p.k]}</td>
+                          <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.3)"}}>{p.w}%</td>
+                          <td style={{padding:"5px 8px",color:"rgba(255,255,255,0.55)"}}>{(r[p.k]*(p.w/100)*5).toFixed(1)}</td>
+                        </tr>
+                      ))}
+                      <tr style={{borderTop:"1px solid rgba(255,255,255,0.1)"}}>
+                        <td style={{padding:"6px 8px",color:"#fff",fontWeight:700}}>TOTAL</td>
+                        <td colSpan={2}/>
+                        <td style={{padding:"6px 8px",fontWeight:700,fontSize:12,color:r.total>=70?"#22c55e":r.total>=50?GOLD:"#ef4444"}}>{r.total}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
             </div>
           </div>
         )}
@@ -789,8 +869,11 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
               {watchlistStatus?<button onClick={function(){if(onWatchlist) onWatchlist(c.ticker,watchlistStatus);}} style={{fontSize:9,padding:"5px 8px",borderRadius:4,border:"1px solid rgba(255,255,255,0.08)",background:"transparent",color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",cursor:"pointer",marginLeft:"auto"}}>Clear</button>:null}
             </div>
 
-            <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>ANALYST NOTES</div>
-            <textarea value={analystNote||""} onChange={function(e){if(onNote) onNote(c.ticker,e.target.value);}} placeholder="Research thesis, key observations, risks..." style={{width:"100%",minHeight:90,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",fontFamily:"DM Mono,monospace",fontSize:10,padding:8,resize:"vertical",outline:"none",boxSizing:"border-box"}}/>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>ANALYST NOTES</div>
+              {noteSaved && <span style={{fontSize:8,color:"#22c55e",fontFamily:"DM Mono,monospace"}}>Saved — {new Date().toLocaleString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}</span>}
+            </div>
+            <textarea value={analystNote||""} onChange={function(e){if(onNote) onNote(c.ticker,e.target.value);if(noteSaveTimer.current)clearTimeout(noteSaveTimer.current);setNoteSaved(true);noteSaveTimer.current=setTimeout(()=>setNoteSaved(false),2000);}} placeholder="Research thesis, key observations, risks..." style={{width:"100%",minHeight:90,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",fontFamily:"DM Mono,monospace",fontSize:10,padding:8,resize:"vertical",outline:"none",boxSizing:"border-box"}}/>
 
             <div style={{fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",letterSpacing:1}}>COMPLIANCE NOTES</div>
             <textarea value={complianceNote||""} onChange={function(e){if(onCompliance) onCompliance(c.ticker,e.target.value);}} placeholder="Compliance flags, restrictions, signoff notes..." style={{width:"100%",minHeight:55,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",fontFamily:"DM Mono,monospace",fontSize:10,padding:8,resize:"none",outline:"none",boxSizing:"border-box"}}/>
@@ -802,6 +885,58 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
 
             <button onClick={function(){const scoreAvg=c.scores?Math.round(Object.values(c.scores).reduce(function(a,b){return a+b;},0)/Object.values(c.scores).length):"";const rows=[["Ticker","Name","Price","P/E","ROIC","Score","WL Status","Analyst Note","Compliance Note"],[c.ticker,c.name||"",c.price||"",c.pe||"",c.roic||"",scoreAvg,watchlistStatus||"",analystNote||"",complianceNote||""]];const csv=rows.map(function(r){return r.map(function(v){return'"'+String(v).replace(/"/g,'""')+'"';}).join(",");}).join("\n");const a=document.createElement("a");a.href="data:text/csv;charset=utf-8,"+encodeURIComponent(csv);a.download=c.ticker+"_notes.csv";a.click();}} style={{alignSelf:"flex-start",fontSize:9,padding:"6px 12px",borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace",cursor:"pointer",marginTop:4}}>Export CSV</button>
 
+          </div>
+        )}
+        {tab==="conviction"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            <div style={{background:"rgba(201,168,76,0.04)",border:"1px solid rgba(201,168,76,0.15)",borderRadius:8,padding:"13px 14px"}}>
+              <div style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace",marginBottom:2,letterSpacing:"0.06em"}}>CONVICTION NARRATIVE</div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"DM Sans,sans-serif",marginBottom:12,lineHeight:1.5}}>Write the investment thesis in plain English — for clients, not quants. This is what separates Aramis from data aggregators.</div>
+              {[
+                {key:"headline",label:"HEADLINE THESIS",placeholder:"Single sentence — the core thesis in plain English",rows:2},
+                {key:"why_now",label:"WHY NOW",placeholder:"What makes this the right time to own this company",rows:3},
+                {key:"key_risks",label:"KEY RISKS",placeholder:"The one or two risks an investor should understand",rows:3},
+                {key:"client_summary",label:"CLIENT SUMMARY",placeholder:"2–3 sentences suitable for sharing with a subscribing client",rows:4},
+              ].map(f=>(
+                <div key={f.key} style={{marginBottom:12}}>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginBottom:5,letterSpacing:"0.06em"}}>{f.label}</div>
+                  <textarea rows={f.rows} value={conv[f.key]||""} onChange={e=>{
+                    const updated={...conv,[f.key]:e.target.value,last_updated:new Date().toISOString(),updated_by:"Jeffrey"};
+                    if(onConviction)onConviction(c.ticker,updated);
+                    if(convSaveTimer.current)clearTimeout(convSaveTimer.current);
+                    setConvSaved(true);convSaveTimer.current=setTimeout(()=>setConvSaved(false),2000);
+                  }} placeholder={f.placeholder} style={{width:"100%",background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:5,color:"rgba(255,255,255,0.8)",fontFamily:"DM Sans,sans-serif",fontSize:10,padding:"8px 10px",resize:"vertical",outline:"none",boxSizing:"border-box",lineHeight:1.6}}/>
+                </div>
+              ))}
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              {conv.last_updated ? (
+                <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>Last updated by {conv.updated_by||"Jeffrey"} — {new Date(conv.last_updated).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</div>
+              ) : <div/>}
+              {convSaved && <span style={{fontSize:8,color:"#22c55e",fontFamily:"DM Mono,monospace"}}>Saved</span>}
+            </div>
+          </div>
+        )}
+        {tab==="log"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:6}}>
+            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:4}}>ACTIVITY LOG — {c.ticker}</div>
+            {activityLogs && activityLogs.length > 0 ? activityLogs.map((entry,i)=>{
+              const icons={"WATCHLIST":"●","WLLANE":"◎","CONVICTION":"★","COMPLIANCE":"◆","STATUS":"●"};
+              const icon=icons[entry.type]||"●";
+              const d=new Date(entry.ts);
+              const ts=isNaN(d)?entry.ts:d.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+              return (
+                <div key={entry.id} style={{display:"flex",gap:10,alignItems:"flex-start",padding:"7px 10px",background:"rgba(255,255,255,0.02)",borderRadius:6,border:"1px solid rgba(255,255,255,0.04)"}}>
+                  <span style={{fontSize:10,color:entry.type==="CONVICTION"?GOLD:entry.type==="WATCHLIST"||entry.type==="WLLANE"?"#60a5fa":"rgba(255,255,255,0.4)",flexShrink:0,marginTop:1}}>{icon}</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontSize:10,color:"rgba(255,255,255,0.7)",fontFamily:"DM Sans,sans-serif"}}>{entry.detail}</div>
+                    <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",marginTop:2}}>{ts}</div>
+                  </div>
+                </div>
+              );
+            }) : (
+              <div style={{fontSize:10,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace",textAlign:"center",padding:"32px 0"}}>No activity recorded yet</div>
+            )}
           </div>
         )}
       </div>
@@ -960,25 +1095,189 @@ function LiveSearch({ onAdd }) {
 }
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ MAIN PLATFORM Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+// ── WATCHLIST BOARD ─────────────────────────────────────────────────────────
+function WatchlistBoard({ universe, watchlist, watchlistData, convictions, activeAlerts, onSelect }) {
+  const LANES = ["BUY", "HOLD", "SELL", "WATCH"];
+  const LANE_COLORS = { BUY:"#22c55e", HOLD:"#60a5fa", SELL:"#ef4444", WATCH:"#f59e0b" };
+  const wlCompanies = universe.filter(c => watchlist[c.ticker]);
+  return (
+    <div style={{flex:1,overflow:"auto",padding:16}}>
+      <div style={{marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+        <div style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif"}}>Watchlist Board</div>
+        <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace"}}>{wlCompanies.length} companies</div>
+        {activeAlerts.length > 0 && <span style={{fontSize:8,padding:"2px 8px",borderRadius:10,background:"rgba(245,158,11,0.12)",color:"#f59e0b",border:"1px solid rgba(245,158,11,0.25)",fontFamily:"DM Mono,monospace"}}>{activeAlerts.length} active alert{activeAlerts.length>1?"s":""}</span>}
+      </div>
+      {wlCompanies.length === 0 ? (
+        <div style={{textAlign:"center",padding:"60px 20px",color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace",fontSize:10}}>
+          No companies in watchlist yet. Add companies to a watchlist bucket from the Universe view.
+        </div>
+      ) : (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,alignItems:"start"}}>
+          {LANES.map(lane => {
+            const companies = wlCompanies.filter(c => (watchlistData[c.ticker]?.lane || "WATCH") === lane);
+            return (
+              <div key={lane}>
+                <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,paddingBottom:6,borderBottom:`1px solid ${LANE_COLORS[lane]}30`}}>
+                  <div style={{width:3,height:14,borderRadius:2,background:LANE_COLORS[lane]}}/>
+                  <span style={{fontSize:9,fontWeight:700,color:LANE_COLORS[lane],fontFamily:"DM Mono,monospace",letterSpacing:"0.08em"}}>{lane}</span>
+                  <span style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace",marginLeft:"auto"}}>{companies.length}</span>
+                </div>
+                <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                  {companies.map(c => {
+                    const wd = watchlistData[c.ticker] || {};
+                    const cv = convictions[c.ticker] || {};
+                    const score = calcAramisScore(c);
+                    const isAlert = activeAlerts.some(a => a.ticker === c.ticker);
+                    const buyInd = wd.buyTarget && c.price
+                      ? (c.price <= Number(wd.buyTarget) ? "#22c55e" : c.price <= Number(wd.buyTarget)*1.05 ? "#f59e0b" : "#ef4444") : null;
+                    const sellInd = wd.sellTarget && c.price
+                      ? (c.price >= Number(wd.sellTarget) ? "#ef4444" : c.price >= Number(wd.sellTarget)*0.95 ? "#f59e0b" : "#22c55e") : null;
+                    return (
+                      <div key={c.ticker} onClick={() => onSelect(c)}
+                        style={{background:"rgba(255,255,255,0.025)",border:`1px solid ${isAlert?"rgba(245,158,11,0.5)":"rgba(255,255,255,0.07)"}`,
+                          borderRadius:8,padding:"11px 12px",cursor:"pointer",transition:"border-color 0.15s",
+                          animation:isAlert?"wl-pulse 1.8s ease-in-out infinite":undefined}}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:5}}>
+                          <div>
+                            <div style={{fontSize:13,fontWeight:800,color:"#fff",fontFamily:"Syne,sans-serif",lineHeight:1}}>{c.ticker}</div>
+                            <div style={{fontSize:8,color:"rgba(255,255,255,0.35)",fontFamily:"DM Sans,sans-serif",marginTop:1,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
+                          </div>
+                          {score && <div style={{fontSize:12,fontWeight:700,color:score.total>=70?"#22c55e":score.total>=50?GOLD:"#ef4444",fontFamily:"DM Mono,monospace"}}>{score.total}</div>}
+                        </div>
+                        <div style={{fontSize:13,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif",marginBottom:5}}>
+                          {c.price ? `$${c.price.toLocaleString()}` : "\u2014"}
+                        </div>
+                        {wd.buyTarget && (
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+                            <span style={{fontSize:7,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace"}}>ENTRY</span>
+                            <span style={{fontSize:9,color:buyInd||GOLD,fontFamily:"DM Mono,monospace",fontWeight:600}}>${wd.buyTarget}</span>
+                          </div>
+                        )}
+                        {wd.sellTarget && (
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+                            <span style={{fontSize:7,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace"}}>EXIT</span>
+                            <span style={{fontSize:9,color:sellInd||GOLD,fontFamily:"DM Mono,monospace",fontWeight:600}}>${wd.sellTarget}</span>
+                          </div>
+                        )}
+                        {cv.client_summary && (
+                          <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Sans,sans-serif",lineHeight:1.4,marginTop:5,borderTop:"1px solid rgba(255,255,255,0.05)",paddingTop:5}}>
+                            {cv.client_summary.length > 100 ? cv.client_summary.substring(0,100)+"\u2026" : cv.client_summary}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {companies.length === 0 && (
+                    <div style={{fontSize:8,color:"rgba(255,255,255,0.12)",fontFamily:"DM Mono,monospace",padding:"16px 8px",textAlign:"center",border:"1px dashed rgba(255,255,255,0.05)",borderRadius:7}}>
+                      No companies in {lane}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <style>{`@keyframes wl-pulse{0%,100%{box-shadow:0 0 0 0 rgba(245,158,11,0);}50%{box-shadow:0 0 0 5px rgba(245,158,11,0.15);}}`}</style>
+    </div>
+  );
+}
+
 function Platform({ user, permissions, onLogout }) {
   const [universe, setUniverse] = useState(
     SEED_TICKERS.map(t => ({ ...t, price:null, scores:null, isLive:false, loading:true }))
   );
   const [selected, setSelected] = useState(null);
   const [filterStatus, setFilterStatus] = useState("All");
-  const [view, setView] = useState("cards"); // "cards" | "ranking"
+  const [view, setView] = useState("cards"); // "cards" | "ranking" | "watchlist"
   const [filterTier, setFilterTier] = useState("All");
   const [sortBy, setSortBy] = useState("name");
   const [apiStatus, setApiStatus] = useState("loading"); // loading | ok | error | demo
-  const [watchlist, setWatchlist] = useState({});
-  const [analystNotes, setAnalystNotes] = useState({});
+  const [watchlist, setWatchlist] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("aramis_wl_v1") || "{}"); } catch { return {}; }
+  });
+  const [analystNotes, setAnalystNotes] = useState(() => {
+    try {
+      const r = {};
+      SEED_TICKERS.forEach(s => { const n = localStorage.getItem(`aramis_notes_${s.ticker}`); if (n !== null) r[s.ticker] = n; });
+      return r;
+    } catch { return {}; }
+  });
   const [complianceNotes, setComplianceNotes] = useState({});
   const [activityLog, setActivityLog] = useState([]);
   const [filterWL, setFilterWL] = useState("All");
-  const logActivity = useCallback((ticker, type, detail) => setActivityLog(prev => [{id:Date.now(),ticker,type,detail,ts:new Date().toLocaleString()},...prev].slice(0,200)), []);
-  const setWL = useCallback((ticker, status) => { const next = status === watchlist[ticker] ? undefined : status; setWatchlist(prev=>({...prev,[ticker]:next})); if(next) logActivity(ticker,"WATCHLIST",ticker+" -> "+next); }, [watchlist, logActivity]);
-  const setNote = useCallback((ticker, note) => setAnalystNotes(prev=>({...prev,[ticker]:note})), []);
-  const setCompliance = useCallback((ticker, note) => { setComplianceNotes(prev=>({...prev,[ticker]:note})); logActivity(ticker,"COMPLIANCE","Note updated"); }, [logActivity]);
+  const [watchlistData, setWatchlistData] = useState(() => {
+    try {
+      const r = {};
+      SEED_TICKERS.forEach(s => { const d = localStorage.getItem(`aramis_watchlist_${s.ticker}`); if (d) r[s.ticker] = JSON.parse(d); });
+      return r;
+    } catch { return {}; }
+  });
+  const [convictions, setConvictions] = useState(() => {
+    try {
+      const r = {};
+      SEED_TICKERS.forEach(s => { const d = localStorage.getItem(`aramis_conviction_${s.ticker}`); if (d) r[s.ticker] = JSON.parse(d); });
+      return r;
+    } catch { return {}; }
+  });
+  const [activityLogs, setActivityLogs] = useState(() => {
+    try {
+      const r = {};
+      SEED_TICKERS.forEach(s => { const d = localStorage.getItem(`aramis_log_${s.ticker}`); if (d) r[s.ticker] = JSON.parse(d); });
+      return r;
+    } catch { return {}; }
+  });
+  const [activeAlerts, setActiveAlerts] = useState([]);
+  const [notifPermission, setNotifPermission] = useState(() =>
+    typeof Notification !== "undefined" ? Notification.permission : "denied"
+  );
+
+  const logActivity = useCallback((ticker, type, detail) => {
+    const entry = { id:Date.now(), ticker, type, detail, ts:new Date().toISOString() };
+    setActivityLogs(prev => {
+      const updated = { ...prev, [ticker]: [entry, ...(prev[ticker]||[])].slice(0,100) };
+      try { localStorage.setItem(`aramis_log_${ticker}`, JSON.stringify(updated[ticker])); } catch {}
+      return updated;
+    });
+    setActivityLog(prev => [entry, ...prev].slice(0,200));
+  }, []);
+
+  const setWL = useCallback((ticker, status) => {
+    const next = status === watchlist[ticker] ? undefined : status;
+    setWatchlist(prev => {
+      const updated = { ...prev, [ticker]: next };
+      try { localStorage.setItem("aramis_wl_v1", JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+    if (next) logActivity(ticker, "WATCHLIST", `Bucket \u2192 ${next}`);
+  }, [watchlist, logActivity]);
+
+  const setNote = useCallback((ticker, note) => {
+    setAnalystNotes(prev => ({ ...prev, [ticker]: note }));
+    try { localStorage.setItem(`aramis_notes_${ticker}`, note); } catch {}
+  }, []);
+
+  const setCompliance = useCallback((ticker, note) => {
+    setComplianceNotes(prev => ({ ...prev, [ticker]: note }));
+    logActivity(ticker, "COMPLIANCE", "Compliance note updated");
+  }, [logActivity]);
+
+  const setWatchlistEntry = useCallback((ticker, data) => {
+    setWatchlistData(prev => {
+      const updated = { ...prev, [ticker]: data };
+      try { localStorage.setItem(`aramis_watchlist_${ticker}`, JSON.stringify(data)); } catch {}
+      return updated;
+    });
+  }, []);
+
+  const setConviction = useCallback((ticker, data) => {
+    setConvictions(prev => {
+      const updated = { ...prev, [ticker]: data };
+      try { localStorage.setItem(`aramis_conviction_${ticker}`, JSON.stringify(data)); } catch {}
+      return updated;
+    });
+    logActivity(ticker, "CONVICTION", `Conviction updated by Jeffrey`);
+  }, [logActivity]);
 
   // Load all seed tickers on mount
   useEffect(() => {
@@ -991,7 +1290,7 @@ function Platform({ user, permissions, onLogout }) {
         try {
           const raw = await loadCompanyData(seed.ticker);
           if (!raw || !raw.profile) {
-            setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false} : c));
+            setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false, dataUnavailable:true} : c));
             continue;
           }
           const transformed = transformFMPData(seed.ticker, raw);
@@ -1011,6 +1310,53 @@ function Platform({ user, permissions, onLogout }) {
     return () => { cancelled = true; };
   }, []);
 
+  // Request notification permission once if watchlist has entries
+  useEffect(() => {
+    if (typeof Notification === "undefined") return;
+    if (Object.keys(watchlistData).length > 0 && Notification.permission === "default") {
+      Notification.requestPermission().then(p => setNotifPermission(p));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Price alert check — runs whenever universe prices update
+  useEffect(() => {
+    let fired = {};
+    try { fired = JSON.parse(sessionStorage.getItem("aramis_alerts_fired") || "{}"); } catch {}
+    const newAlerts = [];
+    universe.forEach(c => {
+      if (!c.price || !watchlistData[c.ticker]) return;
+      const { buyTarget, sellTarget } = watchlistData[c.ticker];
+      if (buyTarget && c.price <= Number(buyTarget)) {
+        const key = `buy_${c.ticker}_${buyTarget}`;
+        if (!fired[key]) {
+          fired[key] = true;
+          newAlerts.push({ ticker:c.ticker, type:"buy", price:c.price, target:Number(buyTarget) });
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            try { new Notification(`${c.ticker} \u2014 Buy target reached: $${buyTarget} (Current: $${c.price})`); } catch {}
+          }
+        }
+      }
+      if (sellTarget && c.price >= Number(sellTarget)) {
+        const key = `sell_${c.ticker}_${sellTarget}`;
+        if (!fired[key]) {
+          fired[key] = true;
+          newAlerts.push({ ticker:c.ticker, type:"sell", price:c.price, target:Number(sellTarget) });
+          if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+            try { new Notification(`${c.ticker} \u2014 Sell target reached: $${sellTarget} (Current: $${c.price})`); } catch {}
+          }
+        }
+      }
+    });
+    if (newAlerts.length > 0) {
+      try { sessionStorage.setItem("aramis_alerts_fired", JSON.stringify(fired)); } catch {}
+      setActiveAlerts(prev => {
+        const existingKeys = new Set(prev.map(a => `${a.type}_${a.ticker}_${a.target}`));
+        const fresh = newAlerts.filter(a => !existingKeys.has(`${a.type}_${a.ticker}_${a.target}`));
+        return fresh.length > 0 ? [...prev, ...fresh] : prev;
+      });
+    }
+  }, [universe, watchlistData]);
+
   const addTicker = useCallback(async (ticker) => {
     if (universe.find(c => c.ticker === ticker)) return;
     const stub = { ticker, name: ticker, exchange:"Ã¢ÂÂ", sector:"Ã¢ÂÂ", industry:"Ã¢ÂÂ", country:"Ã¢ÂÂ", theme:"Ã¢ÂÂ", icStatus:"Not Screened", riskTier:2, price:null, scores:null, isLive:false, loading:true };
@@ -1021,9 +1367,9 @@ function Platform({ user, permissions, onLogout }) {
         const transformed = transformFMPData(ticker, raw);
         setUniverse(prev => prev.map(c => c.ticker === ticker ? {...transformed, loading:false} : c));
       } else {
-        setUniverse(prev => prev.map(c => c.ticker === ticker ? {...c, loading:false} : c));
+        setUniverse(prev => prev.map(c => c.ticker === ticker ? {...c, loading:false, dataUnavailable:true} : c));
       }
-    } catch { setUniverse(prev => prev.map(c => c.ticker===ticker?{...c,loading:false}:c)); }
+    } catch { setUniverse(prev => prev.map(c => c.ticker===ticker?{...c,loading:false,dataUnavailable:true}:c)); }
   }, []);
 
   const filtered = universe.filter(c => {
@@ -1060,6 +1406,10 @@ function Platform({ user, permissions, onLogout }) {
         <div style={{display:"flex",gap:4}}>
           <button onClick={()=>setView("cards")} style={{fontSize:8,padding:"4px 9px",borderRadius:6,border:`1px solid ${view==="cards"?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.08)"}`,background:view==="cards"?"rgba(201,168,76,0.08)":"transparent",color:view==="cards"?GOLD:"rgba(255,255,255,0.3)",cursor:"pointer",fontFamily:"DM Mono,monospace"}}>UNIVERSE</button>
           <button onClick={()=>setView("ranking")} style={{fontSize:8,padding:"4px 9px",borderRadius:6,border:`1px solid ${view==="ranking"?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.08)"}`,background:view==="ranking"?"rgba(201,168,76,0.08)":"transparent",color:view==="ranking"?GOLD:"rgba(255,255,255,0.3)",cursor:"pointer",fontFamily:"DM Mono,monospace"}}>ARAMIS RANKING</button>
+          <button onClick={()=>setView("watchlist")} style={{fontSize:8,padding:"4px 9px",borderRadius:6,border:`1px solid ${view==="watchlist"?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.08)"}`,background:view==="watchlist"?"rgba(201,168,76,0.08)":"transparent",color:view==="watchlist"?GOLD:"rgba(255,255,255,0.3)",cursor:"pointer",fontFamily:"DM Mono,monospace",position:"relative"}}>
+            WATCHLIST
+            {activeAlerts.length > 0 && <span style={{position:"absolute",top:-3,right:-3,width:14,height:14,borderRadius:"50%",background:"#f59e0b",color:"#000",fontSize:7,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"DM Mono,monospace"}}>{activeAlerts.length}</span>}
+          </button>
         </div>
         <div style={{flex:1}}/>
         {/* API status indicator */}
@@ -1149,6 +1499,16 @@ function Platform({ user, permissions, onLogout }) {
           </div>
         </div>
       )}
+      {view==="watchlist" && (
+        <WatchlistBoard
+          universe={universe}
+          watchlist={watchlist}
+          watchlistData={watchlistData}
+          convictions={convictions}
+          activeAlerts={activeAlerts}
+          onSelect={c => { setSelected(c); setView("cards"); }}
+        />
+      )}
       {view==="cards" && (
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
         {/* SIDEBAR */}
@@ -1186,7 +1546,7 @@ function Platform({ user, permissions, onLogout }) {
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
           {selected ? (
             <div style={{flex:1,overflow:"hidden",padding:14}}>
-              <DetailPanel c={selected} onClose={()=>setSelected(null)} permissions={permissions} watchlistStatus={watchlist[selected.ticker]} onWatchlist={setWL} analystNote={analystNotes[selected.ticker]} onNote={setNote} complianceNote={complianceNotes[selected.ticker]} onCompliance={setCompliance}/>
+              <DetailPanel c={selected} onClose={()=>setSelected(null)} permissions={permissions} watchlistStatus={watchlist[selected.ticker]} onWatchlist={setWL} analystNote={analystNotes[selected.ticker]} onNote={setNote} complianceNote={complianceNotes[selected.ticker]} onCompliance={setCompliance} watchlistEntry={watchlistData[selected.ticker]||{}} onWatchlistEntry={setWatchlistEntry} conviction={convictions[selected.ticker]||{}} onConviction={setConviction} activityLogs={activityLogs[selected.ticker]||[]} onLogActivity={logActivity}/>
             </div>
           ) : (
             <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:40,gap:28,position:"relative",overflow:"hidden"}}>
