@@ -21,6 +21,10 @@ async function fmpFetch(endpoint, params = {}) {
   if (gap < 300) await new Promise(r => setTimeout(r, 300 - gap)); // throttle
   lastCall = Date.now();
   const res = await fetch(url);
+  if (res.status === 429) {
+    console.warn(`[Aramis] Rate limited on ${endpoint} — daily quota likely exhausted`);
+    throw new Error('FMP_RATE_LIMITED');
+  }
   if (!res.ok) throw new Error(`FMP ${res.status}: ${endpoint}`);
   const data = await res.json();
   // Detect FMP free-tier limit responses
@@ -155,47 +159,50 @@ function transformFMPData(ticker, raw) {
   const p   = profile   || {};
   const m   = metrics   || {};
   const r   = ratios    || {};
-  const i0  = income[0] || {};
-  const i1  = income[1] || {};
+  const i0  = Array.isArray(income) && income.length > 0 ? income[0] : null;
+  if (!i0) console.warn(`[Aramis] Income statement empty for ${ticker}`);
+  const i1  = Array.isArray(income) && income.length > 1 ? income[1] : null;
   const b   = Array.isArray(balance)  ? (balance[0]  || {}) : (balance  || {});
   const cf  = Array.isArray(cashflow) ? (cashflow[0] || {}) : (cashflow || {});
   const q   = quote     || {};
   const d   = dcf       || {};
   const est = estimates || {};
 
-  const revenue        = i0.revenue || 0;
-  const prevRevenue    = i1.revenue || revenue;
+  const revenue        = i0?.revenue || 0;
+  const prevRevenue    = i1?.revenue || revenue;
   const revenueGrowth  = prevRevenue > 0 ? Math.round(((revenue - prevRevenue) / prevRevenue) * 100) : 0;
   // opMargin: try ratio field, then compute from raw values, then key-metrics fallback
-  const opMarginRaw    = i0.operatingIncomeRatio != null ? i0.operatingIncomeRatio
-                         : (i0.operatingIncome != null && revenue > 0 ? i0.operatingIncome / revenue : null);
-  const opMargin       = opMarginRaw != null ? Math.round(opMarginRaw * 100)
-                         : (m.operatingProfitMargin ? Math.round(m.operatingProfitMargin * 100) : 0);
+  const opMarginRaw    = i0?.operatingIncomeRatio != null ? i0.operatingIncomeRatio
+                         : (i0?.operatingIncome != null && revenue > 0 ? i0.operatingIncome / revenue : null);
+  const opMargin       = opMarginRaw != null ? +(opMarginRaw * 100).toFixed(2)
+                         : (m.operatingProfitMargin != null ? +(m.operatingProfitMargin * 100).toFixed(2) : null);
   // netMargin: same pattern
-  const netMarginRaw   = i0.netIncomeRatio != null ? i0.netIncomeRatio
-                         : (i0.netIncome != null && revenue > 0 ? i0.netIncome / revenue : null);
-  const netMargin      = netMarginRaw != null ? Math.round(netMarginRaw * 100) : 0;
+  const netMarginRaw   = i0?.netIncomeRatio != null ? i0.netIncomeRatio
+                         : (i0?.netIncome != null && revenue > 0 ? i0.netIncome / revenue : null);
+  const netMargin      = netMarginRaw != null ? +(netMarginRaw * 100).toFixed(2) : null;
   // FCF: capex is stored as negative in FMP, so operatingCF + capex = FCF
   const fcf            = cf.freeCashFlow != null ? cf.freeCashFlow : ((cf.operatingCashFlow || 0) + (cf.capitalExpenditure || 0));
   const fcfMargin      = revenue > 0 ? Math.round((fcf / revenue) * 100) : 0;
   // ROIC: try key-metrics (multiple field names), then compute from B/S + I/S
-  const roicFromM      = m.roic ? Math.round(m.roic * 100) : (m.returnOnInvestedCapital ? Math.round(m.returnOnInvestedCapital * 100) : 0);
-  const netIncomeVal   = i0.netIncome || 0;
+  const roicFromM      = m.roic ? Math.round(m.roic * 100) : (m.returnOnInvestedCapital ? Math.round(m.returnOnInvestedCapital * 100) : null);
+  const netIncomeVal   = i0?.netIncome || 0;
   const totalEquity    = b.totalStockholdersEquity || b.totalEquity || 0;
   const totalDebt      = (b.longTermDebt || 0) + (b.shortTermDebt || b.shortTermBorrowings || 0);
   const investedCap    = totalEquity + totalDebt;
-  const roicCalc       = investedCap > 0 ? Math.round((netIncomeVal / investedCap) * 100) : 0;
-  const roic           = roicFromM || roicCalc;
+  const roicCalc       = investedCap > 0 ? Math.round((netIncomeVal / investedCap) * 100) : null;
+  const roic           = roicFromM ?? roicCalc ?? null;
   const netDebt        = b.netDebt        ? Math.round(b.netDebt / 1e9)        : 0;
-  // PE: quote.pe first, then multiple key-metrics field name variants
-  const peRaw          = q.pe || q.priceEarningsRatio || m.peRatio || m.priceEarningsRatio || 0;
+  const price          = q.price || p.price || 0;
+  // PE: quote.pe first, then compute from price/EPS as final fallback
+  const eps            = q.eps || q.earningsPerShare || m.earningsPerShare || 0;
+  const computedPE     = (eps > 0 && price > 0) ? +(price / eps).toFixed(1) : 0;
+  const peRaw          = q.pe || q.priceEarningsRatio || m.peRatio || m.priceEarningsRatio || computedPE || 0;
   const pe             = peRaw > 0 ? Math.round(peRaw) : 0;
   // EV/EBITDA: multiple field name variants across FMP API versions
   const evEbitdaRaw    = m.enterpriseValueOverEBITDA || m.evToEbitda || m.evEbitda || 0;
   const evEbitda       = evEbitdaRaw > 0 ? Math.round(evEbitdaRaw) : 0;
   const mktCap         = q.marketCap || p.mktCap || 0;
   const mktCapFmt      = mktCap >= 1e12 ? `$${(mktCap/1e12).toFixed(1)}T` : mktCap >= 1e9 ? `$${(mktCap/1e9).toFixed(0)}B` : `$${(mktCap/1e6).toFixed(0)}M`;
-  const price          = q.price || p.price || 0;
   const dcfValue       = d.dcf || 0;
   const wacc           = 8; // default Ã¢ÂÂ FMP free tier does not provide WACC directly
   const revenueStr     = revenue >= 1e12 ? `$${(revenue/1e12).toFixed(1)}T` : revenue >= 1e9 ? `$${(revenue/1e9).toFixed(0)}B` : `$${(revenue/1e6).toFixed(0)}M`;
@@ -372,7 +379,7 @@ function DisciplineRadar({ scores, size=195 }) {
 }
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ COMPANY CARD Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, onLogActivity }) {
+function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, onLogActivity, isInternal=true }) {
   const wr = c.bear && c.base && c.bull
     ? ((c.bear.ret*c.bear.prob)+(c.base.ret*c.base.prob)+(c.bull.ret*c.bull.prob))/100
     : null;
@@ -388,10 +395,12 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
           {watchlistStatus&&<span style={{fontSize:7,padding:"1px 4px",borderRadius:3,fontFamily:"DM Mono,monospace",fontWeight:700,display:"inline-block",marginTop:2,background:watchlistStatus==="High Conviction"?"rgba(34,197,94,0.25)":watchlistStatus==="Rejected"?"rgba(239,68,68,0.25)":watchlistStatus==="Needs Review"?"rgba(251,191,36,0.25)":"rgba(99,102,241,0.25)",color:watchlistStatus==="High Conviction"?"#22c55e":watchlistStatus==="Rejected"?"#ef4444":watchlistStatus==="Needs Review"?"#fbbf24":"#818cf8"}}>{watchlistStatus}</span>}
           <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",marginTop:2,fontFamily:"DM Mono,monospace"}}>{c.exchange} ÃÂ· {c.country||"Ã¢ÂÂ"}</div>
         </div>
-        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
-          <span style={{fontSize:8,padding:"2px 6px",borderRadius:20,background:`${STATUS_COLORS[c.icStatus]||"#444"}18`,color:STATUS_COLORS[c.icStatus]||"#888",fontFamily:"DM Mono,monospace"}}>{c.icStatus}</span>
-          <span style={{fontSize:7,padding:"1px 5px",borderRadius:8,background:`${TIER_COLORS[c.riskTier]||"#444"}12`,color:TIER_COLORS[c.riskTier]||"#888",fontFamily:"DM Mono,monospace"}}>Tier {c.riskTier}</span>
-        </div>
+        {isInternal && (
+          <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+            <span style={{fontSize:8,padding:"2px 6px",borderRadius:20,background:`${STATUS_COLORS[c.icStatus]||"#444"}18`,color:STATUS_COLORS[c.icStatus]||"#888",fontFamily:"DM Mono,monospace"}}>{c.icStatus}</span>
+            <span style={{fontSize:7,padding:"1px 5px",borderRadius:8,background:`${TIER_COLORS[c.riskTier]||"#444"}12`,color:TIER_COLORS[c.riskTier]||"#888",fontFamily:"DM Mono,monospace"}}>Tier {c.riskTier}</span>
+          </div>
+        )}
       </div>
       <div style={{fontSize:9,color:"rgba(255,255,255,0.45)",fontFamily:"DM Sans,sans-serif",lineHeight:1.3}}>{c.name}</div>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
@@ -414,11 +423,15 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, watchlistEntry, onWatchlistEntry, conviction, onConviction, activityLogs, onLogActivity }) {
   const [tab,setTab]=useState("overview");
-  const tabs=["overview","chart","financials","earnings","dividends","balance","cashflow","technicals","news","aramis","conviction","notes","log"];
+  const isInternal = permissions?.canEdit === true;
+  const tabs = isInternal
+    ? ["overview","chart","financials","earnings","dividends","balance","cashflow","technicals","news","aramis","conviction","notes","log","performance"]
+    : ["overview","chart","financials","earnings","dividends","balance","cashflow","technicals","news","notes","performance"];
   const [noteSaved, setNoteSaved] = useState(false);
   const noteSaveTimer = useRef(null);
   const [convSaved, setConvSaved] = useState(false);
   const convSaveTimer = useRef(null);
+  const [chartInterval, setChartInterval] = useState("D");
   const wEntry = watchlistEntry || {};
   const conv = conviction || {};
   const wr = c.bear&&c.base&&c.bull ? ((c.bear.ret*c.bear.prob)+(c.base.ret*c.base.prob)+(c.bull.ret*c.bull.prob))/100 : 0;
@@ -438,8 +451,8 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
               <span style={{fontSize:20,fontWeight:800,color:"#fff",fontFamily:"Syne,sans-serif"}}>{c.ticker}</span>
               {c.isLive && <span style={{fontSize:8,padding:"2px 6px",borderRadius:10,background:"rgba(34,197,94,0.12)",color:"#22c55e",fontFamily:"DM Mono,monospace"}}>Ã¢ÂÂ LIVE</span>}
-              <span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:`${STATUS_COLORS[c.icStatus]||"#444"}18`,color:STATUS_COLORS[c.icStatus]||"#888"}}>{c.icStatus}</span>
-              <span style={{fontSize:8,padding:"2px 6px",borderRadius:8,background:`${TIER_COLORS[c.riskTier]||"#444"}15`,color:TIER_COLORS[c.riskTier]||"#888"}}>Tier {c.riskTier}</span>
+              {isInternal && <span style={{fontSize:9,padding:"2px 7px",borderRadius:20,background:`${STATUS_COLORS[c.icStatus]||"#444"}18`,color:STATUS_COLORS[c.icStatus]||"#888"}}>{c.icStatus}</span>}
+              {isInternal && <span style={{fontSize:8,padding:"2px 6px",borderRadius:8,background:`${TIER_COLORS[c.riskTier]||"#444"}15`,color:TIER_COLORS[c.riskTier]||"#888"}}>Tier {c.riskTier}</span>}
             </div>
             <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",fontFamily:"DM Sans,sans-serif"}}>{c.name}</div>
             <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginTop:2}}>{c.exchange} ÃÂ· {c.sector} ÃÂ· {c.industry}</div>
@@ -469,8 +482,8 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
                   </div>
                 )}
                 <div style={{background:"rgba(255,255,255,0.025)",borderRadius:7,padding:"10px 12px"}}>
-                  <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:5}}>ANALYST NOTE</div>
-                  <div style={{fontSize:11,color:"rgba(255,255,255,0.6)",lineHeight:1.65,fontFamily:"DM Sans,sans-serif"}}>{c.analystNote}</div>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:5}}>{isInternal ? "ANALYST NOTE" : "ARAMIS VIEW"}</div>
+                  <div style={{fontSize:11,color:"rgba(255,255,255,0.6)",lineHeight:1.65,fontFamily:"DM Sans,sans-serif"}}>{isInternal ? c.analystNote : (conv?.client_summary || c.analystNote || "No summary available.")}</div>
                 </div>
               </div>
               {c.scores && (
@@ -510,14 +523,14 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
           <div style={{display:"flex",flexDirection:"column",gap:12}}>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
               <Stat label="Revenue" value={c.revenue||"Ã¢ÂÂ"} sub={`+${c.revenueGrowth||0}% YoY`}/>
-              <Stat label="Operating Margin" value={`${c.opMargin||0}%`}/>
-              <Stat label="Net Margin" value={`${c.netMargin||0}%`}/>
+              <Stat label="Operating Margin" value={c.opMargin !== null ? `${c.opMargin}%` : "—"}/>
+              <Stat label="Net Margin" value={c.netMargin !== null ? `${c.netMargin}%` : "—"}/>
               <Stat label="FCF Margin" value={`${c.fcfMargin||0}%`}/>
             </div>
             <div style={{background:"rgba(201,168,76,0.05)",border:"1px solid rgba(201,168,76,0.15)",borderRadius:8,padding:"13px"}}>
               <div style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace",marginBottom:9}}>ROIC vs WACC Ã¢ÂÂ VALUE CREATION ANALYSIS</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
-                <Stat label="ROIC" value={`${c.roic||0}%`} color="#22c55e"/>
+                <Stat label="ROIC" value={c.roic !== null ? `${c.roic}%` : "—"} color="#22c55e"/>
                 <Stat label="WACC (est.)" value={`${c.wacc||8}%`}/>
                 <Stat label="Spread" value={`${spread>=0?"+":""}${spread}%`} color={spread>=10?"#22c55e":spread>=0?GOLD:"#ef4444"} sub={spread>=0?"Value creating":"Value destroying"}/>
               </div>
@@ -603,27 +616,34 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
         )}
         {tab==="chart"&&(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:2}}>INTERACTIVE CHART â {c.ticker}</div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+              <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace"}}>INTERACTIVE CHART — {c.ticker}</div>
+              <div style={{display:"flex",gap:3}}>
+                {[{label:"1D",val:"D"},{label:"1W",val:"W"},{label:"1M",val:"M"},{label:"6M",val:"6M"},{label:"1Y",val:"12M"},{label:"YTD",val:"YTD"},{label:"5Y",val:"60M"}].map(iv=>(
+                  <button key={iv.val} onClick={()=>setChartInterval(iv.val)} style={{fontSize:8,padding:"3px 7px",borderRadius:4,border:`1px solid ${chartInterval===iv.val?"rgba(201,168,76,0.5)":"rgba(255,255,255,0.08)"}`,background:chartInterval===iv.val?"rgba(201,168,76,0.12)":"transparent",color:chartInterval===iv.val?GOLD:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",cursor:"pointer",transition:"all 0.1s"}}>{iv.label}</button>
+                ))}
+              </div>
+            </div>
             <div style={{borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
               <iframe
-                key={c.ticker}
-                src={`https://s.tradingview.com/widgetembed/?symbol=${c.exchange}:${c.ticker}&interval=D&hidesidetoolbar=0&symboledit=0&saveimage=0&toolbarbg=111120&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=1&showpopupbutton=0&locale=en`}
+                key={`${c.ticker}-${chartInterval}`}
+                src={`https://s.tradingview.com/widgetembed/?symbol=${c.exchange}:${c.ticker}&interval=${chartInterval}&hidesidetoolbar=0&symboledit=0&saveimage=0&toolbarbg=111120&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=1&showpopupbutton=0&locale=en`}
                 style={{width:"100%",height:420,border:"none",display:"block"}}
                 allowTransparency={true}
                 title={`${c.ticker} chart`}
               />
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
-              <Stat label="Current Price" value={c.price?`$${c.price.toLocaleString()}`:"â"} sub={`Mkt Cap ${c.mktCap||"â"}`}/>
-              <Stat label="P/E Ratio" value={`${c.pe||"â"}x`} sub={`EV/EBITDA ${c.evEbitda||"â"}x`}/>
-              <Stat label="DCF Fair Value" value={c.dcfValue||"â"} color={GOLD} sub="FMP DCF model"/>
+              <Stat label="Current Price" value={c.price?`$${c.price.toLocaleString()}`:"—"} sub={`Mkt Cap ${c.mktCap||"—"}`}/>
+              <Stat label="P/E Ratio" value={`${c.pe||"—"}x`} sub={`EV/EBITDA ${c.evEbitda||"—"}x`}/>
+              <Stat label="DCF Fair Value" value={c.dcfValue||"—"} color={GOLD} sub="FMP DCF model"/>
             </div>
             <div style={{fontSize:9,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>
-              Powered by TradingView Â· Data via FMP Â· For authorised Aramis Capital personnel only
+              Powered by TradingView · Data via FMP · For authorised Aramis Capital personnel only
             </div>
           </div>
         )}
-        {tab==="news"&&(
+                {tab==="news"&&(
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:4}}>LATEST NEWS Ã¢ÂÂ {c.ticker}</div>
             {c.news && c.news.length > 0 ? c.news.map((n,i)=>(
@@ -937,6 +957,34 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             }) : (
               <div style={{fontSize:10,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace",textAlign:"center",padding:"32px 0"}}>No activity recorded yet</div>
             )}
+          </div>
+        )}
+        {tab==="performance"&&(
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:2}}>PERFORMANCE COMPARISON — {c.ticker} vs S&P 500</div>
+            <div style={{borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
+              <iframe
+                key={`perf-${c.ticker}`}
+                src={`https://s.tradingview.com/widgetembed/?symbol=${c.exchange}:${c.ticker}&interval=W&hidesidetoolbar=0&symboledit=0&saveimage=0&toolbarbg=111120&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=1&showpopupbutton=0&locale=en&compareSymbol=SP:SPX&compareSymbol2=AMEX:SPY`}
+                style={{width:"100%",height:440,border:"none",display:"block"}}
+                allowTransparency={true}
+                title={`${c.ticker} performance comparison`}
+              />
+            </div>
+            <div style={{background:"rgba(255,255,255,0.025)",borderRadius:8,padding:"13px"}}>
+              <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:9}}>BENCHMARKS</div>
+              <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                {[{label:c.ticker,color:GOLD},{label:"S&P 500",color:"#60a5fa"},{label:c.sector||"Sector",color:"#a78bfa"}].map(b=>(
+                  <div key={b.label} style={{display:"flex",alignItems:"center",gap:6}}>
+                    <div style={{width:10,height:3,borderRadius:2,background:b.color}}/>
+                    <span style={{fontSize:9,color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace"}}>{b.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div style={{fontSize:9,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>
+              Powered by TradingView · Weekly chart · For authorised Aramis Capital personnel only
+            </div>
           </div>
         )}
       </div>
@@ -1389,6 +1437,7 @@ function Platform({ user, permissions, onLogout }) {
   const conditional= universe.filter(c=>c.icStatus==="Conditional").length;
   const inReview   = universe.filter(c=>c.icStatus==="Under Review").length;
   const live       = universe.filter(c=>c.isLive).length;
+  const isInternalUser = permissions?.canEdit === true;
 
   return (
     <div style={{background:"#080810",minHeight:"100vh",color:"#fff",fontFamily:"DM Sans,sans-serif",display:"flex",flexDirection:"column"}}>
@@ -1485,9 +1534,11 @@ function Platform({ user, permissions, onLogout }) {
                         <td style={{padding:"8px 10px",color:"rgba(255,255,255,0.55)"}}>{c.pe?`${c.pe}x`:"â"}</td>
                         <td style={{padding:"8px 10px",color:c.roic>12?"#22c55e":c.roic>6?GOLD:"rgba(255,255,255,0.4)"}}>{c.roic?`${c.roic}%`:"â"}</td>
                         <td style={{padding:"8px 10px",color:c.revenueGrowth>15?"#22c55e":c.revenueGrowth>5?GOLD:"rgba(255,255,255,0.4)"}}>{c.revenueGrowth!=null?`+${c.revenueGrowth}%`:"â"}</td>
-                        <td style={{padding:"8px 10px"}}>
-                          <span style={{fontSize:8,padding:"2px 6px",borderRadius:8,background:`${STATUS_COLORS[c.icStatus]||"#444"}18`,color:STATUS_COLORS[c.icStatus]||"#888"}}>{c.icStatus}</span>
-                        </td>
+                        {isInternalUser && (
+                          <td style={{padding:"8px 10px"}}>
+                            <span style={{fontSize:8,padding:"2px 6px",borderRadius:8,background:`${STATUS_COLORS[c.icStatus]||"#444"}18`,color:STATUS_COLORS[c.icStatus]||"#888"}}>{c.icStatus}</span>
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
@@ -1538,7 +1589,7 @@ function Platform({ user, permissions, onLogout }) {
           </div>
           <div style={{fontSize:8,color:"rgba(255,255,255,0.16)",padding:"5px 13px",fontFamily:"DM Mono,monospace",flexShrink:0}}>{filtered.length}/{universe.length} companies ÃÂ· {live} live</div>
           <div style={{flex:1,overflow:"auto",padding:"7px 9px",display:"flex",flexDirection:"column",gap:6}}>
-            {filtered.map(c=><CompanyCard key={c.ticker} c={c} onClick={setSelected} selected={selected?.ticker===c.ticker} loading={c.loading} watchlistStatus={watchlist[c.ticker]} onWatchlist={setWL} analystNote={analystNotes[c.ticker]} onNote={setNote} complianceNote={complianceNotes[c.ticker]} onCompliance={setCompliance} onLogActivity={logActivity}/>)}
+            {filtered.map(c=><CompanyCard key={c.ticker} c={c} onClick={setSelected} selected={selected?.ticker===c.ticker} loading={c.loading} watchlistStatus={watchlist[c.ticker]} onWatchlist={setWL} analystNote={analystNotes[c.ticker]} onNote={setNote} complianceNote={complianceNotes[c.ticker]} onCompliance={setCompliance} onLogActivity={logActivity} isInternal={permissions?.canEdit===true}/>)}
           </div>
         </div>
 
