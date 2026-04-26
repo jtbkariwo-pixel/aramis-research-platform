@@ -421,7 +421,7 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
 }
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
-function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, watchlistEntry, onWatchlistEntry, conviction, onConviction, activityLogs, onLogActivity }) {
+function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, watchlistEntry, onWatchlistEntry, conviction, onConviction, activityLogs, onLogActivity, universe }) {
   const [tab,setTab]=useState("overview");
   const isInternal = permissions?.canEdit === true;
   const tabs = isInternal
@@ -431,11 +431,60 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const noteSaveTimer = useRef(null);
   const [convSaved, setConvSaved] = useState(false);
   const convSaveTimer = useRef(null);
+  const [convGenLoading, setConvGenLoading] = useState(false);
+  const [showClientView, setShowClientView] = useState(false);
   const [chartInterval, setChartInterval] = useState("D");
+  const [showCompare, setShowCompare] = useState(false);
+  const [compareWith, setCompareWith] = useState([]);
   const wEntry = watchlistEntry || {};
   const conv = conviction || {};
   const wr = c.bear&&c.base&&c.bull ? ((c.bear.ret*c.bear.prob)+(c.base.ret*c.base.prob)+(c.bull.ret*c.bull.prob))/100 : 0;
   const spread = (c.roic||0) - (c.wacc||8);
+  const generateConviction = async () => {
+    setConvGenLoading(true);
+    try {
+      const prompt = `You are a senior research analyst at Aramis Capital, a Zimbabwean-based institutional investment firm.\n\nWrite a structured investment conviction narrative for ${c.name} (${c.ticker}) using the following data:\n- Current Price: $${c.price}\n- P/E Ratio: ${c.pe ? c.pe + 'x' : 'N/A'}\n- Operating Margin: ${c.operatingMargin ? c.operatingMargin + '%' : 'N/A'}\n- Revenue Growth: ${c.revenueGrowth ? c.revenueGrowth + '%' : 'N/A'}\n- ROIC: ${c.roic ? c.roic + '%' : 'N/A'}\n- Aramis Score: ${calcAramisScore(c).total}/100\n- Tier: ${c.tier || 'Unclassified'}\n- Sector: ${c.sector || 'Unknown'}\n- Market Cap: ${c.marketCap ? '$' + (c.marketCap / 1e9).toFixed(1) + 'B' : 'N/A'}\n\nYour response must be a JSON object with exactly these keys:\n{\n  "headline": "Single sentence capturing the core investment thesis (max 20 words)",\n  "why_now": "1-2 sentences on what makes this the right moment to own this stock",\n  "business_moat": "1-2 sentences on the competitive advantage and business quality",\n  "financial_health": "1 sentence on balance sheet and cash generation strength",\n  "growth_trajectory": "1 sentence on the growth profile",\n  "management_quality": "1 sentence on capital allocation track record",\n  "valuation": "1 sentence on whether the stock is cheap, fair, or expensive",\n  "key_risks": "1-2 sentences on the primary risks to the thesis",\n  "client_summary": "3 sentences in plain English suitable for a sophisticated private investor"\n}\n\nTone: institutional and measured. Return only the JSON object, no other text.`;
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.REACT_APP_ANTHROPIC_API_KEY || "",
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true"
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 1000,
+          messages: [{ role: "user", content: prompt }]
+        })
+      });
+      const data = await response.json();
+      const text = data.content?.[0]?.text || "";
+      const clean = text.replace(/```json|```/g, "").trim();
+      const parsed = JSON.parse(clean);
+      const aiConv = {
+        ...conv,
+        headline: parsed.headline || conv.headline,
+        why_now: parsed.why_now || conv.why_now,
+        business_moat: parsed.business_moat,
+        financial_health: parsed.financial_health,
+        growth_trajectory: parsed.growth_trajectory,
+        management_quality: parsed.management_quality,
+        valuation: parsed.valuation,
+        key_risks: parsed.key_risks || conv.key_risks,
+        client_summary: parsed.client_summary || conv.client_summary,
+        ai_generated: true,
+        ai_generated_at: new Date().toISOString(),
+        last_updated: new Date().toISOString(),
+        updated_by: "AI"
+      };
+      if (onConviction) onConviction(c.ticker, aiConv);
+    } catch (err) {
+      console.error("[Aramis] AI conviction generation failed:", err);
+    } finally {
+      setConvGenLoading(false);
+    }
+  };
   const Stat=({label,value,sub,color})=>(
     <div style={{background:"rgba(255,255,255,0.03)",borderRadius:7,padding:"9px 11px"}}>
       <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",marginBottom:3}}>{label}</div>
@@ -457,7 +506,10 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             <div style={{fontSize:11,color:"rgba(255,255,255,0.5)",fontFamily:"DM Sans,sans-serif"}}>{c.name}</div>
             <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginTop:2}}>{c.exchange} ÃÂ· {c.sector} ÃÂ· {c.industry}</div>
           </div>
-          <button onClick={onClose} style={{background:"rgba(255,255,255,0.04)",border:"none",color:"rgba(255,255,255,0.35)",width:24,height:24,borderRadius:"50%",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>ÃÂ</button>
+          <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <button onClick={()=>setShowCompare(!showCompare)} style={{fontSize:8,padding:"4px 10px",borderRadius:5,border:`1px solid ${showCompare?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.1)"}`,background:showCompare?"rgba(201,168,76,0.08)":"rgba(255,255,255,0.03)",color:showCompare?GOLD:"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>≡ Compare</button>
+            <button onClick={onClose} style={{background:"rgba(255,255,255,0.04)",border:"none",color:"rgba(255,255,255,0.35)",width:24,height:24,borderRadius:"50%",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>x</button>
+          </div>
         </div>
         <div style={{display:"flex"}}>
           {tabs.map(t=>(
@@ -466,6 +518,75 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
         </div>
       </div>
       <div style={{padding:"16px 20px",flex:1,overflow:"auto"}}>
+        {showCompare && (()=>{
+          const peers = universe ? [...universe].filter(uc=>uc.ticker!==c.ticker).sort((a,b)=>(calcAramisScore(b)?.total||0)-(calcAramisScore(a)?.total||0)) : [];
+          const comparables = [c, ...compareWith.map(tk=>universe?.find(u=>u.ticker===tk)).filter(Boolean)].slice(0,3);
+          const METRICS = [
+            {k:"total",l:"Aramis Score",fmt:v=>`${v}/100`,better:"high",get:(comp)=>calcAramisScore(comp)?.total},
+            {k:"pe",l:"P/E",fmt:v=>`${v}x`,better:"low"},
+            {k:"evEbitda",l:"EV/EBITDA",fmt:v=>`${v}x`,better:"low"},
+            {k:"operatingMargin",l:"Op. Margin",fmt:v=>`${v}%`,better:"high"},
+            {k:"netMargin",l:"Net Margin",fmt:v=>`${v}%`,better:"high"},
+            {k:"roic",l:"ROIC",fmt:v=>`${v}%`,better:"high"},
+            {k:"revenueGrowth",l:"Rev. Growth",fmt:v=>`${v}%`,better:"high"},
+            {k:"fcfYield",l:"FCF Yield",fmt:v=>`${v}%`,better:"high"},
+            {k:"marketCap",l:"Market Cap",fmt:v=>`$${(v/1e9).toFixed(1)}B`,better:"none"},
+            {k:"riskTier",l:"Tier",fmt:v=>`Tier ${v}`,better:"low"},
+          ];
+          const getVal=(comp,m)=>m.get?m.get(comp):comp[m.k];
+          const getBest=(m)=>{
+            const vals=comparables.map(comp=>({comp,v:getVal(comp,m)})).filter(x=>x.v!=null&&!isNaN(x.v));
+            if(vals.length<2||m.better==="none") return null;
+            return m.better==="high"?vals.reduce((a,b)=>b.v>a.v?b:a).comp.ticker:vals.reduce((a,b)=>b.v<a.v?b:a).comp.ticker;
+          };
+          return (
+            <div style={{marginBottom:16}}>
+              <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:10}}>
+                <div style={{fontSize:9,color:GOLD,fontFamily:"DM Mono,monospace",letterSpacing:"0.08em"}}>PEER COMPARISON</div>
+                <div style={{display:"flex",gap:6,flex:1}}>
+                  {[0,1].map(i=>(
+                    <select key={i} value={compareWith[i]||""} onChange={e=>{const nw=[...compareWith];nw[i]=e.target.value||undefined;setCompareWith(nw.filter(Boolean));}} style={{fontSize:8,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:5,color:"#fff",padding:"3px 6px",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>
+                      <option value="">+ Add peer {i+1}</option>
+                      {peers.map(p=><option key={p.ticker} value={p.ticker} style={{background:"#111122"}}>{p.ticker} — {p.name?.substring(0,20)}</option>)}
+                    </select>
+                  ))}
+                </div>
+              </div>
+              <div style={{overflowX:"auto"}}>
+                <table style={{width:"100%",borderCollapse:"collapse",fontSize:9,fontFamily:"DM Mono,monospace"}}>
+                  <thead>
+                    <tr style={{borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+                      <th style={{padding:"6px 8px",textAlign:"left",fontSize:8,color:"rgba(255,255,255,0.3)",fontWeight:600,width:120}}>METRIC</th>
+                      {comparables.map(comp=>(
+                        <th key={comp.ticker} style={{padding:"6px 8px",textAlign:"right",fontSize:10,color:comp.ticker===c.ticker?GOLD:"rgba(255,255,255,0.6)",fontWeight:700}}>{comp.ticker}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {METRICS.map(m=>{
+                      const best=getBest(m);
+                      return (
+                        <tr key={m.l} style={{borderBottom:"1px solid rgba(255,255,255,0.03)"}}>
+                          <td style={{padding:"6px 8px",color:"rgba(255,255,255,0.35)",fontSize:8}}>{m.l}</td>
+                          {comparables.map(comp=>{
+                            const v=getVal(comp,m);
+                            const isBest=best===comp.ticker;
+                            return (
+                              <td key={comp.ticker} style={{padding:"6px 8px",textAlign:"right",background:isBest?"rgba(34,197,94,0.08)":"transparent",borderRadius:4,color:isBest?"#22c55e":"rgba(255,255,255,0.65)",fontWeight:isBest?700:400}}>
+                                {v!=null?m.fmt(v):"—"}
+                              </td>
+                            );
+                          })}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{height:1,background:"rgba(255,255,255,0.06)",margin:"14px 0"}}/>
+            </div>
+          );
+        })()}
         {tab==="overview"&&(
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
             <div style={{display:"flex",gap:12,alignItems:"flex-start"}}>
@@ -909,14 +1030,81 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
         )}
         {tab==="conviction"&&(
           <div style={{display:"flex",flexDirection:"column",gap:14}}>
+            {showClientView && (
+              <div style={{position:"fixed",top:0,left:0,right:0,bottom:0,background:"rgba(0,0,0,0.85)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+                <div style={{background:"#090912",border:"1px solid rgba(201,168,76,0.25)",borderRadius:12,padding:"28px 32px",maxWidth:560,width:"100%",maxHeight:"90vh",overflow:"auto"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
+                    <div>
+                      <div style={{fontSize:10,color:GOLD,fontFamily:"DM Mono,monospace",letterSpacing:"0.12em",marginBottom:4}}>ARAMIS CAPITAL RESEARCH</div>
+                      <div style={{fontSize:13,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif"}}>{c.name} ({c.ticker})</div>
+                      <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginTop:3}}>{new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"long",year:"numeric"})}</div>
+                    </div>
+                    <button onClick={()=>setShowClientView(false)} style={{background:"rgba(255,255,255,0.06)",border:"none",color:"rgba(255,255,255,0.5)",width:26,height:26,borderRadius:"50%",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+                  </div>
+                  <div style={{borderTop:"1px solid rgba(201,168,76,0.15)",borderBottom:"1px solid rgba(201,168,76,0.15)",padding:"18px 0",marginBottom:18}}>
+                    {conv.headline ? (
+                      <div style={{fontSize:17,fontWeight:700,color:GOLD,fontFamily:"Syne,sans-serif",lineHeight:1.3,marginBottom:18}}>{conv.headline}</div>
+                    ) : (
+                      <div style={{fontSize:11,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace",fontStyle:"italic"}}>No headline thesis written yet.</div>
+                    )}
+                    {conv.why_now && (
+                      <div style={{marginBottom:14}}>
+                        <div style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace",letterSpacing:"0.1em",marginBottom:5}}>WHY NOW</div>
+                        <div style={{fontSize:11,color:"rgba(255,255,255,0.7)",fontFamily:"DM Sans,sans-serif",lineHeight:1.6}}>{conv.why_now}</div>
+                      </div>
+                    )}
+                    {conv.key_risks && (
+                      <div style={{marginBottom:14}}>
+                        <div style={{fontSize:8,color:"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace",letterSpacing:"0.1em",marginBottom:5}}>WHAT COULD GO WRONG</div>
+                        <div style={{fontSize:11,color:"rgba(255,255,255,0.7)",fontFamily:"DM Sans,sans-serif",lineHeight:1.6}}>{conv.key_risks}</div>
+                      </div>
+                    )}
+                    {conv.client_summary && (
+                      <div>
+                        <div style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace",letterSpacing:"0.1em",marginBottom:5}}>OUR VIEW</div>
+                        <div style={{fontSize:11,color:"rgba(255,255,255,0.7)",fontFamily:"DM Sans,sans-serif",lineHeight:1.6}}>{conv.client_summary}</div>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+                    <div style={{display:"flex",gap:10}}>
+                      {calcAramisScore(c)&&<span style={{fontSize:9,color:"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace"}}>Aramis Score: {calcAramisScore(c).total}/100</span>}
+                      {c.riskTier&&<span style={{fontSize:9,color:"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace"}}>Tier: {c.riskTier}</span>}
+                      {c.icStatus&&<span style={{fontSize:9,color:"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace"}}>{c.icStatus}</span>}
+                    </div>
+                    <button onClick={()=>window.print()} style={{fontSize:9,padding:"5px 12px",borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>Print</button>
+                  </div>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace",lineHeight:1.6,borderTop:"1px solid rgba(255,255,255,0.05)",paddingTop:10}}>For Aramis Capital clients only. Not investment advice. Capital at risk.</div>
+                </div>
+              </div>
+            )}
             <div style={{background:"rgba(201,168,76,0.04)",border:"1px solid rgba(201,168,76,0.15)",borderRadius:8,padding:"13px 14px"}}>
               <div style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace",marginBottom:2,letterSpacing:"0.06em"}}>CONVICTION NARRATIVE</div>
               <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"DM Sans,sans-serif",marginBottom:12,lineHeight:1.5}}>Write the investment thesis in plain English — for clients, not quants. This is what separates Aramis from data aggregators.</div>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,paddingBottom:10,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                <button
+                  onClick={generateConviction}
+                  disabled={convGenLoading}
+                  style={{fontSize:9,padding:"7px 14px",borderRadius:5,border:"1px solid rgba(201,168,76,0.35)",background:convGenLoading?"rgba(201,168,76,0.05)":"rgba(201,168,76,0.1)",color:convGenLoading?"rgba(255,255,255,0.3)":GOLD,fontFamily:"DM Mono,monospace",fontWeight:700,cursor:convGenLoading?"not-allowed":"pointer",letterSpacing:"0.06em"}}
+                >
+                  {convGenLoading ? "GENERATING..." : "✦ GENERATE AI NARRATIVE"}
+                </button>
+                {conv.ai_generated && (
+                  <span style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>
+                    AI draft · {conv.ai_generated_at ? new Date(conv.ai_generated_at).toLocaleDateString() : ""} · Edit before publishing
+                  </span>
+                )}
+              </div>
               {[
                 {key:"headline",label:"HEADLINE THESIS",placeholder:"Single sentence — the core thesis in plain English",rows:2},
                 {key:"why_now",label:"WHY NOW",placeholder:"What makes this the right time to own this company",rows:3},
+                {key:"business_moat",label:"COMPETITIVE MOAT",placeholder:"What prevents competitors from taking market share",rows:2},
+                {key:"financial_health",label:"FINANCIAL HEALTH",placeholder:"Balance sheet strength, debt levels, cash generation",rows:2},
+                {key:"growth_trajectory",label:"GROWTH TRAJECTORY",placeholder:"Revenue and earnings growth trend, quality of growth",rows:2},
+                {key:"management_quality",label:"MANAGEMENT & CAPITAL ALLOCATION",placeholder:"Track record of ROIC, buybacks, dividends, acquisitions",rows:2},
+                {key:"valuation",label:"VALUATION ASSESSMENT",placeholder:"Is the current price fair, cheap, or expensive relative to intrinsic value",rows:2},
                 {key:"key_risks",label:"KEY RISKS",placeholder:"The one or two risks an investor should understand",rows:3},
-                {key:"client_summary",label:"CLIENT SUMMARY",placeholder:"2–3 sentences suitable for sharing with a subscribing client",rows:4},
+                {key:"client_summary",label:"CLIENT SUMMARY — Plain English (external-facing)",placeholder:"3 sentences suitable for sharing with a sophisticated private investor",rows:4},
               ].map(f=>(
                 <div key={f.key} style={{marginBottom:12}}>
                   <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginBottom:5,letterSpacing:"0.06em"}}>{f.label}</div>
@@ -933,7 +1121,10 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
               {conv.last_updated ? (
                 <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>Last updated by {conv.updated_by||"Jeffrey"} — {new Date(conv.last_updated).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</div>
               ) : <div/>}
-              {convSaved && <span style={{fontSize:8,color:"#22c55e",fontFamily:"DM Mono,monospace"}}>Saved</span>}
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                {convSaved && <span style={{fontSize:8,color:"#22c55e",fontFamily:"DM Mono,monospace"}}>Saved</span>}
+                <button onClick={()=>setShowClientView(true)} style={{fontSize:9,padding:"5px 12px",borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>Preview Client View</button>
+              </div>
             </div>
           </div>
         )}
@@ -961,11 +1152,13 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
         )}
         {tab==="performance"&&(
           <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:2}}>PERFORMANCE COMPARISON — {c.ticker} vs S&P 500</div>
+            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:2}}>
+              PERFORMANCE COMPARISON — {c.ticker} vs S&P 500 vs SECTOR
+            </div>
             <div style={{borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
               <iframe
                 key={`perf-${c.ticker}`}
-                src={`https://s.tradingview.com/widgetembed/?symbol=${c.exchange}:${c.ticker}&interval=W&hidesidetoolbar=0&symboledit=0&saveimage=0&toolbarbg=111120&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=1&showpopupbutton=0&locale=en&compareSymbol=SP:SPX&compareSymbol2=AMEX:SPY`}
+                src={`https://s.tradingview.com/widgetembed/?symbol=${c.exchange}:${c.ticker}&interval=W&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=111120&theme=dark&style=1&timezone=exchange&withdateranges=1&showpopupbutton=0&locale=en&studies=[]&hidevolume=1&compareSymbols=${encodeURIComponent(JSON.stringify([{"symbol":"SP:SPX","lineColor":"#60a5fa"},{"symbol":"AMEX:QQQ","lineColor":"#a78bfa"}]))}`}
                 style={{width:"100%",height:440,border:"none",display:"block"}}
                 allowTransparency={true}
                 title={`${c.ticker} performance comparison`}
@@ -974,7 +1167,11 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             <div style={{background:"rgba(255,255,255,0.025)",borderRadius:8,padding:"13px"}}>
               <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:9}}>BENCHMARKS</div>
               <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                {[{label:c.ticker,color:GOLD},{label:"S&P 500",color:"#60a5fa"},{label:c.sector||"Sector",color:"#a78bfa"}].map(b=>(
+                {[
+                  {label:c.ticker, color:GOLD},
+                  {label:"S&P 500", color:"#60a5fa"},
+                  {label:"NASDAQ 100", color:"#a78bfa"}
+                ].map(b=>(
                   <div key={b.label} style={{display:"flex",alignItems:"center",gap:6}}>
                     <div style={{width:10,height:3,borderRadius:2,background:b.color}}/>
                     <span style={{fontSize:9,color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace"}}>{b.label}</span>
@@ -983,7 +1180,7 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
               </div>
             </div>
             <div style={{fontSize:9,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>
-              Powered by TradingView · Weekly chart · For authorised Aramis Capital personnel only
+              Powered by TradingView · Weekly chart · Aramis Capital internal use only
             </div>
           </div>
         )}
@@ -1147,7 +1344,7 @@ function LiveSearch({ onAdd }) {
 function WatchlistBoard({ universe, watchlist, watchlistData, convictions, activeAlerts, onSelect }) {
   const LANES = ["BUY", "HOLD", "SELL", "WATCH"];
   const LANE_COLORS = { BUY:"#22c55e", HOLD:"#60a5fa", SELL:"#ef4444", WATCH:"#f59e0b" };
-  const wlCompanies = universe.filter(c => watchlist[c.ticker]);
+  const wlCompanies = universe.filter(c => watchlist[c.ticker] || watchlistData[c.ticker]?.lane);
   return (
     <div style={{flex:1,overflow:"auto",padding:16}}>
       <div style={{marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
@@ -1279,6 +1476,18 @@ function Platform({ user, permissions, onLogout }) {
   const [notifPermission, setNotifPermission] = useState(() =>
     typeof Notification !== "undefined" ? Notification.permission : "denied"
   );
+  const [modelTab, setModelTab] = useState("tier1_concentrated");
+  const [modelSnapshots, setModelSnapshots] = useState(() => {
+    try {
+      const r = {};
+      ["tier1_concentrated","quality_growth","income_dividend"].forEach(id => {
+        const d = localStorage.getItem(`aramis_model_snapshot_${id}`);
+        if (d) r[id] = JSON.parse(d);
+      });
+      return r;
+    } catch { return {}; }
+  });
+  const [compareWith, setCompareWith] = useState([]);
 
   const logActivity = useCallback((ticker, type, detail) => {
     const entry = { id:Date.now(), ticker, type, detail, ts:new Date().toISOString() };
@@ -1316,6 +1525,14 @@ function Platform({ user, permissions, onLogout }) {
       try { localStorage.setItem(`aramis_watchlist_${ticker}`, JSON.stringify(data)); } catch {}
       return updated;
     });
+    if (data.lane) {
+      setWatchlist(prev => {
+        if (prev[ticker]) return prev;
+        const updated = { ...prev, [ticker]: "Watchlist" };
+        try { localStorage.setItem("aramis_wl_v1", JSON.stringify(updated)); } catch {}
+        return updated;
+      });
+    }
   }, []);
 
   const setConviction = useCallback((ticker, data) => {
@@ -1459,6 +1676,9 @@ function Platform({ user, permissions, onLogout }) {
             WATCHLIST
             {activeAlerts.length > 0 && <span style={{position:"absolute",top:-3,right:-3,width:14,height:14,borderRadius:"50%",background:"#f59e0b",color:"#000",fontSize:7,fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",fontFamily:"DM Mono,monospace"}}>{activeAlerts.length}</span>}
           </button>
+          <button onClick={()=>setView("decision")} style={{fontSize:8,padding:"4px 9px",borderRadius:6,border:`1px solid ${view==="decision"?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.08)"}`,background:view==="decision"?"rgba(201,168,76,0.08)":"transparent",color:view==="decision"?GOLD:"rgba(255,255,255,0.3)",cursor:"pointer",fontFamily:"DM Mono,monospace"}}>DECISION</button>
+          <button onClick={()=>setView("models")} style={{fontSize:8,padding:"4px 9px",borderRadius:6,border:`1px solid ${view==="models"?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.08)"}`,background:view==="models"?"rgba(201,168,76,0.08)":"transparent",color:view==="models"?GOLD:"rgba(255,255,255,0.3)",cursor:"pointer",fontFamily:"DM Mono,monospace"}}>MODELS</button>
+          <button onClick={()=>setView("calendar")} style={{fontSize:8,padding:"4px 9px",borderRadius:6,border:`1px solid ${view==="calendar"?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.08)"}`,background:view==="calendar"?"rgba(201,168,76,0.08)":"transparent",color:view==="calendar"?GOLD:"rgba(255,255,255,0.3)",cursor:"pointer",fontFamily:"DM Mono,monospace"}}>CALENDAR</button>
         </div>
         <div style={{flex:1}}/>
         {/* API status indicator */}
@@ -1560,6 +1780,321 @@ function Platform({ user, permissions, onLogout }) {
           onSelect={c => { setSelected(c); setView("cards"); }}
         />
       )}
+      {view==="decision" && (
+        <div style={{flex:1,overflow:"auto",padding:20}}>
+          {!selected ? (
+            <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"60px 20px",gap:12}}>
+              <div style={{fontSize:12,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace"}}>Select a company from the Universe view to open the Decision screen.</div>
+              <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center",marginTop:8}}>
+                {universe.slice(0,6).map(c=>(
+                  <button key={c.ticker} onClick={()=>setSelected(c)} style={{fontSize:10,padding:"6px 14px",borderRadius:6,border:"1px solid rgba(255,255,255,0.1)",background:"rgba(255,255,255,0.04)",color:"rgba(255,255,255,0.6)",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>{c.ticker}</button>
+                ))}
+              </div>
+            </div>
+          ) : (()=>{
+            const dc = selected;
+            const dScore = calcAramisScore(dc);
+            const dConv = convictions[dc.ticker] || {};
+            const dWd = watchlistData[dc.ticker] || {};
+            const LANE_COLORS_D = {BUY:"#22c55e",HOLD:"#60a5fa",SELL:"#ef4444",WATCH:"#f59e0b"};
+            return (
+              <div style={{maxWidth:900,margin:"0 auto",display:"flex",flexDirection:"column",gap:16}}>
+                {/* Header */}
+                <div style={{background:"rgba(255,255,255,0.025)",borderRadius:10,padding:"16px 20px",border:"1px solid rgba(255,255,255,0.07)"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                    <div>
+                      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                        <span style={{fontSize:22,fontWeight:800,color:"#fff",fontFamily:"Syne,sans-serif"}}>{dc.ticker}</span>
+                        {dScore&&<span style={{fontSize:11,fontWeight:700,color:dScore.total>=70?"#22c55e":dScore.total>=50?GOLD:"#ef4444",fontFamily:"DM Mono,monospace",padding:"2px 8px",borderRadius:6,background:dScore.total>=70?"rgba(34,197,94,0.1)":dScore.total>=50?"rgba(201,168,76,0.1)":"rgba(239,68,68,0.1)"}}>{dScore.total}/100</span>}
+                        {dc.riskTier&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:6,background:"rgba(255,255,255,0.06)",color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace"}}>Tier {dc.riskTier}</span>}
+                        {dc.icStatus&&<span style={{fontSize:9,padding:"2px 7px",borderRadius:10,background:`${STATUS_COLORS[dc.icStatus]||"#444"}18`,color:STATUS_COLORS[dc.icStatus]||"#888",fontFamily:"DM Mono,monospace"}}>{dc.icStatus}</span>}
+                      </div>
+                      <div style={{fontSize:13,color:"rgba(255,255,255,0.6)",fontFamily:"DM Sans,sans-serif"}}>{dc.name}</div>
+                      <div style={{fontSize:10,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginTop:2}}>{dc.exchange} · {dc.sector}</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:22,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif"}}>{dc.price?`$${dc.price.toLocaleString()}`:"—"}</div>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                    {["BUY","HOLD","WATCH","SELL"].map(ln=>{
+                      const lc=LANE_COLORS_D[ln];
+                      const active=dWd.lane===ln;
+                      return <button key={ln} onClick={()=>{const d={...dWd,lane:active?undefined:ln};setWatchlistEntry(dc.ticker,d);}} style={{fontSize:9,padding:"5px 14px",borderRadius:5,border:`1px solid ${active?lc:"rgba(255,255,255,0.12)"}`,background:active?`${lc}18`:"transparent",color:active?lc:"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace",fontWeight:700,cursor:"pointer"}}>{ln}</button>;
+                    })}
+                  </div>
+                </div>
+                {/* Sidebar company selector */}
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {universe.map(uc=>(
+                    <button key={uc.ticker} onClick={()=>setSelected(uc)} style={{fontSize:8,padding:"3px 8px",borderRadius:5,border:`1px solid ${selected?.ticker===uc.ticker?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.07)"}`,background:selected?.ticker===uc.ticker?"rgba(201,168,76,0.08)":"transparent",color:selected?.ticker===uc.ticker?GOLD:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>{uc.ticker}</button>
+                  ))}
+                </div>
+                {/* Section 1: Stats */}
+                <div style={{background:"rgba(255,255,255,0.025)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(255,255,255,0.06)"}}>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:10}}>PRICE & VALUATION</div>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10}}>
+                    {[
+                      {l:"P/E",v:dc.pe?`${dc.pe}x`:"—"},
+                      {l:"EV/EBITDA",v:dc.evEbitda?`${dc.evEbitda}x`:"—"},
+                      {l:"Op. Margin",v:dc.operatingMargin?`${dc.operatingMargin}%`:"—"},
+                      {l:"Net Margin",v:dc.netMargin?`${dc.netMargin}%`:"—"},
+                      {l:"ROIC",v:dc.roic?`${dc.roic}%`:"—"},
+                      {l:"Market Cap",v:dc.marketCap?`$${(dc.marketCap/1e9).toFixed(1)}B`:"—"},
+                      {l:"Revenue TTM",v:dc.revenue?`$${(dc.revenue/1e9).toFixed(1)}B`:"—"},
+                      {l:"FCF Yield",v:dc.fcfYield?`${dc.fcfYield}%`:"—"}
+                    ].map(s=>(
+                      <div key={s.l} style={{background:"rgba(255,255,255,0.03)",borderRadius:7,padding:"8px 10px"}}>
+                        <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",marginBottom:3}}>{s.l}</div>
+                        <div style={{fontSize:13,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif"}}>{s.v}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {/* Section 2: Mini Chart */}
+                <div style={{borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.07)"}}>
+                  <iframe key={`dec-chart-${dc.ticker}`} src={`https://s.tradingview.com/widgetembed/?symbol=${dc.exchange}:${dc.ticker}&interval=D&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=111120&studies=[]&theme=dark&style=1&timezone=exchange&withdateranges=0&showpopupbutton=0&locale=en`} style={{width:"100%",height:160,border:"none",display:"block"}} allowTransparency={true} title={`${dc.ticker} decision chart`}/>
+                </div>
+                {/* Section 3: Conviction */}
+                <div style={{background:"rgba(201,168,76,0.04)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(201,168,76,0.12)"}}>
+                  <div style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace",marginBottom:10}}>AI CONVICTION NARRATIVE</div>
+                  {dConv.headline ? (
+                    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                      <div style={{fontSize:15,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif",lineHeight:1.3}}>{dConv.headline}</div>
+                      {dConv.why_now&&<div><div style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace",marginBottom:3}}>WHY NOW</div><div style={{fontSize:10,color:"rgba(255,255,255,0.6)",fontFamily:"DM Sans,sans-serif",lineHeight:1.5}}>{dConv.why_now}</div></div>}
+                      {dConv.key_risks&&<div><div style={{fontSize:8,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",marginBottom:3}}>KEY RISKS</div><div style={{fontSize:10,color:"rgba(255,255,255,0.6)",fontFamily:"DM Sans,sans-serif",lineHeight:1.5}}>{dConv.key_risks}</div></div>}
+                      {dConv.client_summary&&<div style={{borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:8}}><div style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace",marginBottom:3}}>CLIENT SUMMARY</div><div style={{fontSize:10,color:"rgba(255,255,255,0.6)",fontFamily:"DM Sans,sans-serif",lineHeight:1.5}}>{dConv.client_summary}</div></div>}
+                    </div>
+                  ) : (
+                    <div style={{fontSize:9,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>No conviction narrative yet — generate one from the Conviction tab.</div>
+                  )}
+                </div>
+                {/* Section 4: Latest News */}
+                {dc.news&&dc.news.length>0&&(
+                  <div style={{background:"rgba(255,255,255,0.025)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(255,255,255,0.06)"}}>
+                    <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:10}}>LATEST NEWS</div>
+                    {dc.news.slice(0,3).map((n,i)=>(
+                      <a key={i} href={n.url} target="_blank" rel="noreferrer" style={{display:"block",textDecoration:"none",padding:"8px 0",borderBottom:i<2?"1px solid rgba(255,255,255,0.05)":"none"}}>
+                        <div style={{fontSize:10,color:"rgba(255,255,255,0.8)",fontFamily:"DM Sans,sans-serif",lineHeight:1.4,marginBottom:3}}>{n.title}</div>
+                        <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace"}}>{n.publishedDate?.substring(0,10)} · {n.site}</div>
+                      </a>
+                    ))}
+                  </div>
+                )}
+                {/* Section 5: Aramis Pillars */}
+                {dScore&&(
+                  <div style={{background:"rgba(255,255,255,0.025)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(255,255,255,0.06)"}}>
+                    <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:10}}>ARAMIS PILLAR SCORES</div>
+                    <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:8}}>
+                      {[{k:"quality",l:"Quality"},{k:"value",l:"Value"},{k:"growth",l:"Growth"},{k:"momentum",l:"Momentum"},{k:"health",l:"Health"}].map(p=>(
+                        <div key={p.k} style={{background:"rgba(255,255,255,0.03)",borderRadius:7,padding:"8px 10px",textAlign:"center"}}>
+                          <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginBottom:4}}>{p.l}</div>
+                          <div style={{fontSize:14,fontWeight:700,color:dScore[p.k]>=14?"#22c55e":dScore[p.k]>=8?GOLD:"#ef4444",fontFamily:"DM Mono,monospace"}}>{dScore[p.k]}</div>
+                          <div style={{fontSize:7,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>/ 20</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {/* Section 6: Watchlist Controls */}
+                <div style={{background:"rgba(255,255,255,0.025)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(255,255,255,0.06)"}}>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:10}}>WATCHLIST CONTROLS</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                    <div>
+                      <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginBottom:4}}>ENTRY TARGET</div>
+                      <input type="number" step="0.01" placeholder="$0.00" value={dWd.buyTarget||""} onChange={e=>{const d={...dWd,buyTarget:e.target.value||null};setWatchlistEntry(dc.ticker,d);}} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:5,padding:"6px 8px",color:"#fff",fontSize:11,fontFamily:"DM Mono,monospace",outline:"none",boxSizing:"border-box"}}/>
+                    </div>
+                    <div>
+                      <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginBottom:4}}>EXIT TARGET</div>
+                      <input type="number" step="0.01" placeholder="$0.00" value={dWd.sellTarget||""} onChange={e=>{const d={...dWd,sellTarget:e.target.value||null};setWatchlistEntry(dc.ticker,d);}} style={{width:"100%",background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:5,padding:"6px 8px",color:"#fff",fontSize:11,fontFamily:"DM Mono,monospace",outline:"none",boxSizing:"border-box"}}/>
+                    </div>
+                  </div>
+                  {dWd.lane&&<div style={{marginTop:10,fontSize:9,color:LANE_COLORS_D[dWd.lane]||"#fff",fontFamily:"DM Mono,monospace"}}>Current Lane: {dWd.lane}</div>}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+      {view==="models" && (()=>{
+        const MODEL_DEFS = [
+          {id:"tier1_concentrated",name:"Tier 1 Concentrated",desc:"15–20 highest conviction Tier 1 names. Long-term hold orientation.",filter:u=>u.riskTier===1,weight:"equal_weight"},
+          {id:"quality_growth",name:"Global Quality Growth",desc:"Top companies by Aramis score, diversified by sector.",filter:u=>true,weight:"score_weighted",limit:10},
+          {id:"income_dividend",name:"Income & Dividend",desc:"Yield-focused names with dividend history.",filter:u=>u.dividends&&u.dividends.length>0,weight:"equal_weight"}
+        ];
+        const mdl = MODEL_DEFS.find(m=>m.id===modelTab)||MODEL_DEFS[0];
+        let holdings = universe.filter(mdl.filter);
+        if(mdl.limit){
+          const scored=[...holdings].map(c=>({...c,_score:calcAramisScore(c)?.total||0}));
+          scored.sort((a,b)=>b._score-a._score);
+          holdings=scored.slice(0,mdl.limit);
+        }
+        const scores=holdings.map(c=>({c,s:calcAramisScore(c)?.total||0}));
+        const totalScore=scores.reduce((a,b)=>a+b.s,0)||1;
+        const snap=modelSnapshots[mdl.id];
+        const trackModel=()=>{
+          const snapshot={date:new Date().toISOString(),holdings:holdings.map(c=>({ticker:c.ticker,price:c.price,weight:mdl.weight==="score_weighted"?(calcAramisScore(c)?.total||0)/totalScore:1/holdings.length}))};
+          setModelSnapshots(prev=>{const u={...prev,[mdl.id]:snapshot};try{localStorage.setItem(`aramis_model_snapshot_${mdl.id}`,JSON.stringify(snapshot));}catch{}return u;});
+        };
+        const SECTOR_COLORS=["#60a5fa","#a78bfa","#34d399","#f59e0b","#f87171","#818cf8","#fb923c","#4ade80"];
+        const sectors=[...new Set(holdings.map(c=>c.sector).filter(Boolean))];
+        return (
+          <div style={{flex:1,overflow:"auto",padding:16}}>
+            <div style={{marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif"}}>Portfolio Models</div>
+              <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace"}}>Reference frameworks — not execution tools</div>
+            </div>
+            <div style={{display:"flex",gap:6,marginBottom:16}}>
+              {MODEL_DEFS.map(m=>(
+                <button key={m.id} onClick={()=>setModelTab(m.id)} style={{fontSize:9,padding:"5px 12px",borderRadius:6,border:`1px solid ${modelTab===m.id?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.08)"}`,background:modelTab===m.id?"rgba(201,168,76,0.08)":"transparent",color:modelTab===m.id?GOLD:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>{m.name}</button>
+              ))}
+            </div>
+            <div style={{background:"rgba(201,168,76,0.04)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(201,168,76,0.12)",marginBottom:14}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif",marginBottom:4}}>{mdl.name}</div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,0.4)",fontFamily:"DM Sans,sans-serif",lineHeight:1.5}}>{mdl.desc}</div>
+              {snap&&<div style={{marginTop:8,fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace"}}>Tracked since {new Date(snap.date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})} · Benchmark comparison requires FMP paid tier</div>}
+              <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+                <button onClick={trackModel} style={{fontSize:9,padding:"5px 12px",borderRadius:5,border:"1px solid rgba(201,168,76,0.3)",background:"rgba(201,168,76,0.08)",color:GOLD,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>{snap?"Re-snapshot Model":"Track This Model"}</button>
+              </div>
+            </div>
+            {/* Sector composition */}
+            <div style={{background:"rgba(255,255,255,0.025)",borderRadius:10,padding:"12px 14px",border:"1px solid rgba(255,255,255,0.06)",marginBottom:14}}>
+              <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:8}}>SECTOR COMPOSITION</div>
+              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                {sectors.map((sec,i)=>{const cnt=holdings.filter(c=>c.sector===sec).length;return(
+                  <div key={sec} style={{display:"flex",alignItems:"center",gap:5}}>
+                    <div style={{width:8,height:8,borderRadius:"50%",background:SECTOR_COLORS[i%SECTOR_COLORS.length]}}/>
+                    <span style={{fontSize:9,color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace"}}>{sec} ({cnt})</span>
+                  </div>
+                );})}
+              </div>
+            </div>
+            {/* Holdings table */}
+            <div style={{overflowX:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"DM Mono,monospace"}}>
+                <thead>
+                  <tr style={{borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
+                    {["Ticker","Name","Price","Aramis Score","Weight","7D Return","Entry"].map(h=>(
+                      <th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:8,color:"rgba(255,255,255,0.3)",fontWeight:600}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {holdings.map(hc=>{
+                    const sc=calcAramisScore(hc)?.total||0;
+                    const wt=mdl.weight==="score_weighted"?((sc/totalScore)*100).toFixed(1):(100/holdings.length).toFixed(1);
+                    const snapEntry=snap?.holdings?.find(h=>h.ticker===hc.ticker);
+                    const ret=snapEntry&&snapEntry.price&&hc.price?((hc.price-snapEntry.price)/snapEntry.price*100).toFixed(1):null;
+                    return (
+                      <tr key={hc.ticker} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>{setSelected(hc);setView("cards");}}>
+                        <td style={{padding:"8px 10px",color:GOLD,fontWeight:700}}>{hc.ticker}</td>
+                        <td style={{padding:"8px 10px",color:"rgba(255,255,255,0.6)",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{hc.name}</td>
+                        <td style={{padding:"8px 10px",color:"#fff"}}>{hc.price?`$${hc.price.toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"8px 10px",color:sc>=70?"#22c55e":sc>=50?GOLD:"#ef4444",fontWeight:700}}>{sc}</td>
+                        <td style={{padding:"8px 10px",color:"rgba(255,255,255,0.5)"}}>{wt}%</td>
+                        <td style={{padding:"8px 10px",color:ret!==null?(parseFloat(ret)>=0?"#22c55e":"#ef4444"):"rgba(255,255,255,0.3)"}}>{ret!==null?`${ret>=0?"+":""}${ret}%`:"—"}</td>
+                        <td style={{padding:"8px 10px"}}>
+                          <button onClick={e=>{e.stopPropagation();const d={...watchlistData[hc.ticker]||{},lane:"HOLD"};setWatchlistEntry(hc.ticker,d);}} style={{fontSize:8,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>Add to WL</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              {holdings.length===0&&<div style={{textAlign:"center",padding:"40px",color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace",fontSize:10}}>No companies match this model's criteria.</div>}
+            </div>
+          </div>
+        );
+      })()}
+      {view==="calendar" && (()=>{
+        const today = new Date();
+        const in90 = new Date(today);
+        in90.setDate(in90.getDate()+90);
+        const rows = [];
+        universe.forEach(uc=>{
+          if(!uc.earnings||uc.earnings.length===0) return;
+          uc.earnings.forEach(e=>{
+            const rawDate = e.epsdatetime||e.date;
+            if(!rawDate) return;
+            const d = new Date(rawDate);
+            if(isNaN(d)) return;
+            rows.push({
+              c:uc,
+              date:d,
+              eps:e,
+              future:d>=today,
+              near:d>=today&&d<new Date(today.getTime()+14*86400000),
+              inWindow:d>=today&&d<=in90
+            });
+          });
+        });
+        rows.sort((a,b)=>a.date-b.date);
+        const upcoming=rows.filter(r=>r.inWindow);
+        const past=rows.filter(r=>!r.future).sort((a,b)=>b.date-a.date).slice(0,20);
+        return (
+          <div style={{flex:1,overflow:"auto",padding:16}}>
+            <div style={{marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
+              <div style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif"}}>Earnings & Catalyst Calendar</div>
+              <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace"}}>Next 90 days · All universe companies</div>
+            </div>
+            <div style={{marginBottom:18}}>
+              <div style={{fontSize:9,color:GOLD,fontFamily:"DM Mono,monospace",marginBottom:10,letterSpacing:"0.08em"}}>UPCOMING EARNINGS — NEXT 90 DAYS</div>
+              {upcoming.length===0&&<div style={{fontSize:9,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace",padding:"20px 0"}}>No upcoming earnings dates found in current data.</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:1}}>
+                {upcoming.map((r,i)=>{
+                  const daysAway=Math.ceil((r.date-today)/86400000);
+                  const conv=convictions[r.c.ticker]||{};
+                  const inWl=!!(watchlist[r.c.ticker]||watchlistData[r.c.ticker]?.lane);
+                  return (
+                    <div key={i} style={{padding:"10px 14px",background:r.near?"rgba(245,158,11,0.07)":"rgba(255,255,255,0.02)",borderRadius:7,border:`1px solid ${r.near?"rgba(245,158,11,0.2)":"rgba(255,255,255,0.05)"}`,cursor:"pointer"}} onClick={()=>{setSelected(r.c);setView("cards");}}>
+                      <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                        <div style={{width:80,flexShrink:0}}>
+                          <div style={{fontSize:10,fontWeight:700,color:r.near?"#f59e0b":"rgba(255,255,255,0.7)",fontFamily:"DM Mono,monospace"}}>{r.date.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</div>
+                          <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginTop:1}}>In {daysAway}d</div>
+                        </div>
+                        <div style={{width:60,flexShrink:0}}>
+                          <span style={{fontSize:11,fontWeight:700,color:GOLD,fontFamily:"DM Mono,monospace"}}>{r.c.ticker}</span>
+                          {inWl&&<span style={{fontSize:10,color:GOLD,marginLeft:4}}>★</span>}
+                        </div>
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{fontSize:9,color:"rgba(255,255,255,0.55)",fontFamily:"DM Sans,sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.c.name}</div>
+                          {conv.why_now&&<div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>↪ {conv.why_now}</div>}
+                        </div>
+                        {r.eps.epsEstimated!=null&&<div style={{textAlign:"right",flexShrink:0}}>
+                          <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>Est. EPS</div>
+                          <div style={{fontSize:10,color:"rgba(255,255,255,0.6)",fontFamily:"DM Mono,monospace"}}>{r.eps.epsEstimated?.toFixed(2)}</div>
+                        </div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            {past.length>0&&(
+              <div>
+                <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginBottom:10,letterSpacing:"0.08em",borderTop:"1px solid rgba(255,255,255,0.06)",paddingTop:14}}>RECENTLY REPORTED</div>
+                <div style={{display:"flex",flexDirection:"column",gap:1}}>
+                  {past.map((r,i)=>{
+                    const inWl=!!(watchlist[r.c.ticker]||watchlistData[r.c.ticker]?.lane);
+                    const surp=r.eps.eps!=null&&r.eps.epsEstimated!=null?((r.eps.eps-r.eps.epsEstimated)/Math.abs(r.eps.epsEstimated||1)*100).toFixed(1):null;
+                    return (
+                      <div key={i} style={{padding:"8px 14px",background:"rgba(255,255,255,0.01)",borderRadius:6,border:"1px solid rgba(255,255,255,0.04)",cursor:"pointer",opacity:0.6}} onClick={()=>{setSelected(r.c);setView("cards");}}>
+                        <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                          <div style={{width:80,flexShrink:0}}><div style={{fontSize:9,color:"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace"}}>{r.date.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</div></div>
+                          <div style={{width:60,flexShrink:0}}><span style={{fontSize:10,color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace"}}>{r.c.ticker}</span>{inWl&&<span style={{fontSize:9,color:GOLD,marginLeft:4}}>★</span>}</div>
+                          <div style={{flex:1,fontSize:9,color:"rgba(255,255,255,0.35)",fontFamily:"DM Sans,sans-serif",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.c.name}</div>
+                          <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>Reported</div>
+                          {surp!==null&&<div style={{fontSize:9,color:parseFloat(surp)>=0?"#22c55e":"#ef4444",fontFamily:"DM Mono,monospace",flexShrink:0}}>{surp>=0?"+":""}{surp}% vs est.</div>}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
       {view==="cards" && (
       <div style={{display:"flex",flex:1,overflow:"hidden"}}>
         {/* SIDEBAR */}
@@ -1597,7 +2132,7 @@ function Platform({ user, permissions, onLogout }) {
         <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
           {selected ? (
             <div style={{flex:1,overflow:"hidden",padding:14}}>
-              <DetailPanel c={selected} onClose={()=>setSelected(null)} permissions={permissions} watchlistStatus={watchlist[selected.ticker]} onWatchlist={setWL} analystNote={analystNotes[selected.ticker]} onNote={setNote} complianceNote={complianceNotes[selected.ticker]} onCompliance={setCompliance} watchlistEntry={watchlistData[selected.ticker]||{}} onWatchlistEntry={setWatchlistEntry} conviction={convictions[selected.ticker]||{}} onConviction={setConviction} activityLogs={activityLogs[selected.ticker]||[]} onLogActivity={logActivity}/>
+              <DetailPanel c={selected} onClose={()=>setSelected(null)} permissions={permissions} watchlistStatus={watchlist[selected.ticker]} onWatchlist={setWL} analystNote={analystNotes[selected.ticker]} onNote={setNote} complianceNote={complianceNotes[selected.ticker]} onCompliance={setCompliance} watchlistEntry={watchlistData[selected.ticker]||{}} onWatchlistEntry={setWatchlistEntry} conviction={convictions[selected.ticker]||{}} onConviction={setConviction} activityLogs={activityLogs[selected.ticker]||[]} onLogActivity={logActivity} universe={universe}/>
             </div>
           ) : (
             <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:40,gap:28,position:"relative",overflow:"hidden"}}>
