@@ -425,27 +425,9 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function PerfChart({ticker, exchange, sectorETF}) {
-  const compareSymbols = [
-    {symbol:"AMEX:SPY",position:"SameScale"},
-    {symbol:"NASDAQ:QQQ",position:"SameScale"},
-    ...(sectorETF?[{symbol:`AMEX:${sectorETF}`,position:"SameScale"}]:[])
-  ];
-  const config = JSON.stringify({
-    autosize: true,
-    symbol: `${exchange}:${ticker}`,
-    interval: "W",
-    timezone: "Etc/UTC",
-    theme: "dark",
-    style: "2",
-    locale: "en",
-    enable_publishing: false,
-    allow_symbol_change: false,
-    compare_symbols: compareSymbols,
-    calendar: false,
-    support_host: "https://www.tradingview.com"
-  });
-  const srcDoc = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0}html,body{height:100%;overflow:hidden;background:#0a0a12}</style></head><body><div class="tradingview-widget-container" style="height:100%;width:100%"><div class="tradingview-widget-container__widget" style="height:calc(100% - 32px);width:100%"></div><script type="text/javascript" src="https://s.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>${config}<\/script></div></body></html>`;
-  return <iframe srcDoc={srcDoc} style={{width:"100%",height:460,border:"none",display:"block"}} title={`${ticker} performance`} />;
+  const compare = ["AMEX:SPY","AMEX:QQQ",...(sectorETF?[`AMEX:${sectorETF}`]:[])].join(",");
+  const src = `https://s.tradingview.com/widgetembed/?symbol=${exchange}:${ticker}&interval=W&theme=dark&style=2&locale=en&compare=${compare}&timezone=Etc%2FUTC&withdateranges=1&toolbarbg=111120&hidesidetoolbar=0&enable_publishing=0&allow_symbol_change=0`;
+  return <iframe src={src} style={{width:"100%",height:460,border:"none",display:"block"}} title={`${ticker} performance`} />;
 }
 
 function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, watchlistEntry, onWatchlistEntry, conviction, onConviction, activityLogs, onLogActivity, universe }) {
@@ -461,6 +443,9 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const [convGenLoading, setConvGenLoading] = useState(false);
   const [showClientView, setShowClientView] = useState(false);
   const [convGenError, setConvGenError] = useState("");
+  const [geminiKey, setGeminiKey] = useState(() => { try { return localStorage.getItem("aramis_gemini_key") || ""; } catch { return ""; } });
+  const [keyInput, setKeyInput] = useState("");
+  const [showKeyInput, setShowKeyInput] = useState(false);
   const [chartInterval, setChartInterval] = useState("D");
   const [showCompare, setShowCompare] = useState(false);
   const [compareWith, setCompareWith] = useState([]);
@@ -471,10 +456,10 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const generateConviction = async () => {
     setConvGenLoading(true);
     setConvGenError("");
-    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
+    const apiKey = geminiKey;
     if (!apiKey) {
-      const found = Object.keys(import.meta.env).filter(k=>k.startsWith("VITE_")).join(", ") || "none";
-      setConvGenError(`VITE_GEMINI_API_KEY not in build (baked-in VITE_ vars: ${found}). Get a free key at aistudio.google.com/apikey, add it to Vercel → Settings → Environment Variables, then push any commit to trigger a fresh build.`);
+      setShowKeyInput(true);
+      setConvGenError("Paste your Gemini API key below to enable AI generation.");
       setConvGenLoading(false);
       return;
     }
@@ -1123,21 +1108,29 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             <div style={{background:"rgba(201,168,76,0.04)",border:"1px solid rgba(201,168,76,0.15)",borderRadius:8,padding:"13px 14px"}}>
               <div style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace",marginBottom:2,letterSpacing:"0.06em"}}>CONVICTION NARRATIVE</div>
               <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"DM Sans,sans-serif",marginBottom:12,lineHeight:1.5}}>Write the investment thesis in plain English — for clients, not quants. This is what separates Aramis from data aggregators.</div>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,paddingBottom:10,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                <button
-                  onClick={generateConviction}
-                  disabled={convGenLoading}
-                  style={{fontSize:9,padding:"7px 14px",borderRadius:5,border:"1px solid rgba(201,168,76,0.35)",background:convGenLoading?"rgba(201,168,76,0.05)":"rgba(201,168,76,0.1)",color:convGenLoading?"rgba(255,255,255,0.3)":GOLD,fontFamily:"DM Mono,monospace",fontWeight:700,cursor:convGenLoading?"not-allowed":"pointer",letterSpacing:"0.06em"}}
-                >
-                  {convGenLoading ? "GENERATING..." : "✦ GENERATE AI NARRATIVE"}
-                </button>
-                {conv.ai_generated && !convGenError && (
-                  <span style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>
-                    AI draft · {conv.ai_generated_at ? new Date(conv.ai_generated_at).toLocaleDateString() : ""} · Edit before publishing
-                  </span>
-                )}
-                {convGenError && (
-                  <span style={{fontSize:8,color:"#ef4444",fontFamily:"DM Mono,monospace",lineHeight:1.4}}>{convGenError}</span>
+              <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14,paddingBottom:12,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+                  <button onClick={generateConviction} disabled={convGenLoading} style={{fontSize:9,padding:"7px 14px",borderRadius:5,border:"1px solid rgba(201,168,76,0.35)",background:convGenLoading?"rgba(201,168,76,0.05)":"rgba(201,168,76,0.1)",color:convGenLoading?"rgba(255,255,255,0.3)":GOLD,fontFamily:"DM Mono,monospace",fontWeight:700,cursor:convGenLoading?"not-allowed":"pointer",letterSpacing:"0.06em"}}>
+                    {convGenLoading ? "GENERATING..." : "✦ GENERATE AI NARRATIVE"}
+                  </button>
+                  <button onClick={()=>{setShowKeyInput(v=>!v);setKeyInput("");}} style={{fontSize:8,padding:"5px 10px",borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:geminiKey?"#4ade80":"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace",cursor:"pointer",letterSpacing:"0.04em"}}>
+                    {geminiKey ? "✓ KEY SET" : "SET GEMINI KEY"}
+                  </button>
+                  {conv.ai_generated && !convGenError && (
+                    <span style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>AI draft · {conv.ai_generated_at ? new Date(conv.ai_generated_at).toLocaleDateString() : ""} · Edit before publishing</span>
+                  )}
+                </div>
+                {convGenError && <span style={{fontSize:8,color:"#ef4444",fontFamily:"DM Mono,monospace",lineHeight:1.4}}>{convGenError}</span>}
+                {(showKeyInput || !geminiKey) && (
+                  <div style={{display:"flex",flexDirection:"column",gap:6,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,padding:"10px 12px"}}>
+                    <div style={{fontSize:8,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace"}}>GEMINI API KEY — get a free key at aistudio.google.com/apikey (starts with AIza...)</div>
+                    <div style={{display:"flex",gap:8}}>
+                      <input type="password" value={keyInput} onChange={e=>setKeyInput(e.target.value)} placeholder="Paste your Gemini API key here" style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:5,color:"#fff",fontFamily:"DM Mono,monospace",fontSize:9,padding:"6px 10px",outline:"none"}} onKeyDown={e=>{if(e.key==="Enter"&&keyInput.trim()){const k=keyInput.trim();localStorage.setItem("aramis_gemini_key",k);setGeminiKey(k);setShowKeyInput(false);setKeyInput("");setConvGenError("");}}} />
+                      <button onClick={()=>{const k=keyInput.trim();if(k){localStorage.setItem("aramis_gemini_key",k);setGeminiKey(k);setShowKeyInput(false);setKeyInput("");setConvGenError("");}}} style={{padding:"6px 14px",borderRadius:5,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.1)",color:"#4ade80",fontFamily:"DM Mono,monospace",fontSize:9,fontWeight:700,cursor:"pointer"}}>SAVE</button>
+                      {geminiKey&&<button onClick={()=>{localStorage.removeItem("aramis_gemini_key");setGeminiKey("");setShowKeyInput(false);}} style={{padding:"6px 10px",borderRadius:5,border:"1px solid rgba(239,68,68,0.3)",background:"rgba(239,68,68,0.08)",color:"#ef4444",fontFamily:"DM Mono,monospace",fontSize:9,cursor:"pointer"}}>CLEAR</button>}
+                    </div>
+                    <div style={{fontSize:7,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>Stored in this browser only — never sent to any server except Google's API</div>
+                  </div>
                 )}
               </div>
               {[
