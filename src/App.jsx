@@ -425,46 +425,27 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function PerfChart({ticker, exchange, sectorETF}) {
-  const containerRef = useRef(null);
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const compareSymbols = [
-      {symbol:"AMEX:SPY",position:"SameScale"},
-      {symbol:"NASDAQ:QQQ",position:"SameScale"},
-      ...(sectorETF?[{symbol:`AMEX:${sectorETF}`,position:"SameScale"}]:[])
-    ];
-    const config = JSON.stringify({
-      autosize: true,
-      symbol: `${exchange}:${ticker}`,
-      interval: "W",
-      timezone: "Etc/UTC",
-      theme: "dark",
-      style: "2",
-      locale: "en",
-      enable_publishing: false,
-      allow_symbol_change: false,
-      compare_symbols: compareSymbols,
-      calendar: false,
-      support_host: "https://www.tradingview.com"
-    });
-    const wrapper = document.createElement("div");
-    wrapper.className = "tradingview-widget-container";
-    wrapper.style.cssText = "height:460px;width:100%";
-    const inner = document.createElement("div");
-    inner.className = "tradingview-widget-container__widget";
-    inner.style.cssText = "height:428px;width:100%";
-    const script = document.createElement("script");
-    script.type = "text/javascript";
-    script.async = true;
-    script.src = "https://s.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
-    script.textContent = config;
-    wrapper.appendChild(inner);
-    wrapper.appendChild(script);
-    containerRef.current.innerHTML = "";
-    containerRef.current.appendChild(wrapper);
-    return () => { if (containerRef.current) containerRef.current.innerHTML = ""; };
-  }, [ticker, exchange, sectorETF]);
-  return <div ref={containerRef} style={{width:"100%",height:460}} />;
+  const compareSymbols = [
+    {symbol:"AMEX:SPY",position:"SameScale"},
+    {symbol:"NASDAQ:QQQ",position:"SameScale"},
+    ...(sectorETF?[{symbol:`AMEX:${sectorETF}`,position:"SameScale"}]:[])
+  ];
+  const config = JSON.stringify({
+    autosize: true,
+    symbol: `${exchange}:${ticker}`,
+    interval: "W",
+    timezone: "Etc/UTC",
+    theme: "dark",
+    style: "2",
+    locale: "en",
+    enable_publishing: false,
+    allow_symbol_change: false,
+    compare_symbols: compareSymbols,
+    calendar: false,
+    support_host: "https://www.tradingview.com"
+  });
+  const srcDoc = `<!DOCTYPE html><html><head><meta charset="UTF-8"><style>*{margin:0;padding:0}html,body{height:100%;overflow:hidden;background:#0a0a12}</style></head><body><div class="tradingview-widget-container" style="height:100%;width:100%"><div class="tradingview-widget-container__widget" style="height:calc(100% - 32px);width:100%"></div><script type="text/javascript" src="https://s.tradingview.com/external-embedding/embed-widget-advanced-chart.js" async>${config}<\/script></div></body></html>`;
+  return <iframe srcDoc={srcDoc} style={{width:"100%",height:460,border:"none",display:"block"}} title={`${ticker} performance`} />;
 }
 
 function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, watchlistEntry, onWatchlistEntry, conviction, onConviction, activityLogs, onLogActivity, universe }) {
@@ -490,9 +471,10 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const generateConviction = async () => {
     setConvGenLoading(true);
     setConvGenError("");
-    const apiKey = (typeof import.meta !== "undefined" && import.meta?.env?.VITE_GEMINI_API_KEY) || "";
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
     if (!apiKey) {
-      setConvGenError("API key not configured. Add VITE_GEMINI_API_KEY in Vercel → Settings → Environment Variables, then redeploy.");
+      const found = Object.keys(import.meta.env).filter(k=>k.startsWith("VITE_")).join(", ") || "none";
+      setConvGenError(`VITE_GEMINI_API_KEY not in build (baked-in VITE_ vars: ${found}). Get a free key at aistudio.google.com/apikey, add it to Vercel → Settings → Environment Variables, then push any commit to trigger a fresh build.`);
       setConvGenLoading(false);
       return;
     }
