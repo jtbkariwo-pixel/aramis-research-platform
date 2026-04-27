@@ -443,9 +443,7 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const [convGenLoading, setConvGenLoading] = useState(false);
   const [showClientView, setShowClientView] = useState(false);
   const [convGenError, setConvGenError] = useState("");
-  const [geminiKey, setGeminiKey] = useState(() => { try { return localStorage.getItem("aramis_gemini_key") || ""; } catch { return ""; } });
-  const [keyInput, setKeyInput] = useState("");
-  const [showKeyInput, setShowKeyInput] = useState(false);
+  const autoGenAttempted = useRef({});
   const [chartInterval, setChartInterval] = useState("D");
   const [showCompare, setShowCompare] = useState(false);
   const [compareWith, setCompareWith] = useState([]);
@@ -456,56 +454,45 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const generateConviction = async () => {
     setConvGenLoading(true);
     setConvGenError("");
-    const apiKey = geminiKey;
-    if (!apiKey) {
-      setShowKeyInput(true);
-      setConvGenError("Paste your Gemini API key below to enable AI generation.");
-      setConvGenLoading(false);
-      return;
-    }
     try {
       const scoreData = calcAramisScore(c);
-      const prompt = `You are a senior research analyst at Aramis Capital, a Zimbabwean-based institutional investment firm.\n\nWrite a structured investment conviction narrative for ${c.name} (${c.ticker}) using the following data:\n- Current Price: $${c.price}\n- P/E Ratio: ${c.pe ? c.pe + 'x' : 'N/A'}\n- Operating Margin: ${c.opMargin != null ? c.opMargin + '%' : 'N/A'}\n- Revenue Growth: ${c.revenueGrowth ? c.revenueGrowth + '%' : 'N/A'}\n- ROIC: ${c.roic ? c.roic + '%' : 'N/A'}\n- Aramis Score: ${scoreData ? scoreData.total + '/100' : 'N/A'}\n- Tier: ${c.riskTier ? 'Tier ' + c.riskTier : 'Unclassified'}\n- Sector: ${c.sector || 'Unknown'}\n- Market Cap: ${c.mktCap || 'N/A'}\n\nYour response must be a JSON object with exactly these keys:\n{\n  "headline": "Single sentence capturing the core investment thesis (max 20 words)",\n  "why_now": "1-2 sentences on what makes this the right moment to own this stock",\n  "business_moat": "1-2 sentences on the competitive advantage and business quality",\n  "financial_health": "1 sentence on balance sheet and cash generation strength",\n  "growth_trajectory": "1 sentence on the growth profile",\n  "management_quality": "1 sentence on capital allocation track record",\n  "valuation": "1 sentence on whether the stock is cheap, fair, or expensive",\n  "key_risks": "1-2 sentences on the primary risks to the thesis",\n  "client_summary": "3 sentences in plain English suitable for a sophisticated private investor"\n}\n\nTone: institutional and measured. Return only the JSON object, no other text.`;
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
+      const response = await fetch("/api/generate-narrative", {
         method: "POST",
         headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
-          contents: [{parts: [{text: prompt}]}],
-          generationConfig: {maxOutputTokens: 1200, temperature: 0.7}
+          name: c.name, ticker: c.ticker, price: c.price, pe: c.pe,
+          opMargin: c.opMargin, revenueGrowth: c.revenueGrowth, roic: c.roic,
+          score: scoreData?.total, riskTier: c.riskTier, sector: c.sector, mktCap: c.mktCap
         })
       });
       const data = await response.json();
-      if (!response.ok) {
-        setConvGenError(`Gemini error ${response.status}: ${data.error?.message || "Unknown error"}`);
-        return;
-      }
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
-      const clean = text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(clean);
+      if (!response.ok) { setConvGenError(data.error || "Generation failed"); return; }
+      const p = data.narrative;
       const aiConv = {
         ...conv,
-        headline: parsed.headline || conv.headline,
-        why_now: parsed.why_now || conv.why_now,
-        business_moat: parsed.business_moat,
-        financial_health: parsed.financial_health,
-        growth_trajectory: parsed.growth_trajectory,
-        management_quality: parsed.management_quality,
-        valuation: parsed.valuation,
-        key_risks: parsed.key_risks || conv.key_risks,
-        client_summary: parsed.client_summary || conv.client_summary,
-        ai_generated: true,
-        ai_generated_at: new Date().toISOString(),
-        last_updated: new Date().toISOString(),
-        updated_by: "AI"
+        headline: p.headline||conv.headline, why_now: p.why_now||conv.why_now,
+        business_moat: p.business_moat, financial_health: p.financial_health,
+        growth_trajectory: p.growth_trajectory, management_quality: p.management_quality,
+        valuation: p.valuation, key_risks: p.key_risks||conv.key_risks,
+        client_summary: p.client_summary||conv.client_summary,
+        ai_generated: true, ai_generated_at: new Date().toISOString(),
+        last_updated: new Date().toISOString(), updated_by: "AI"
       };
       if (onConviction) onConviction(c.ticker, aiConv);
     } catch (err) {
-      console.error("[Aramis] AI conviction generation failed:", err);
-      setConvGenError(`Generation failed: ${err.message}`);
+      setConvGenError(`Error: ${err.message}`);
     } finally {
       setConvGenLoading(false);
     }
   };
+  useEffect(() => {
+    if (!isInternal) return;
+    if (conv.headline) return;
+    if (autoGenAttempted.current[c.ticker]) return;
+    autoGenAttempted.current[c.ticker] = true;
+    const t = setTimeout(generateConviction, 700);
+    return () => clearTimeout(t);
+  }, [c.ticker]);
   const Stat=({label,value,sub,color})=>(
     <div style={{background:"rgba(255,255,255,0.03)",borderRadius:7,padding:"9px 11px"}}>
       <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",marginBottom:3}}>{label}</div>
@@ -1108,30 +1095,18 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             <div style={{background:"rgba(201,168,76,0.04)",border:"1px solid rgba(201,168,76,0.15)",borderRadius:8,padding:"13px 14px"}}>
               <div style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace",marginBottom:2,letterSpacing:"0.06em"}}>CONVICTION NARRATIVE</div>
               <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"DM Sans,sans-serif",marginBottom:12,lineHeight:1.5}}>Write the investment thesis in plain English — for clients, not quants. This is what separates Aramis from data aggregators.</div>
-              <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:14,paddingBottom:12,borderBottom:"1px solid rgba(255,255,255,0.06)"}}>
-                <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
-                  <button onClick={generateConviction} disabled={convGenLoading} style={{fontSize:9,padding:"7px 14px",borderRadius:5,border:"1px solid rgba(201,168,76,0.35)",background:convGenLoading?"rgba(201,168,76,0.05)":"rgba(201,168,76,0.1)",color:convGenLoading?"rgba(255,255,255,0.3)":GOLD,fontFamily:"DM Mono,monospace",fontWeight:700,cursor:convGenLoading?"not-allowed":"pointer",letterSpacing:"0.06em"}}>
-                    {convGenLoading ? "GENERATING..." : "✦ GENERATE AI NARRATIVE"}
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,paddingBottom:10,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
+                {convGenLoading ? (
+                  <span style={{fontSize:9,color:GOLD,fontFamily:"DM Mono,monospace",letterSpacing:"0.06em"}}>✦ Generating AI narrative...</span>
+                ) : (
+                  <button onClick={generateConviction} style={{fontSize:9,padding:"7px 14px",borderRadius:5,border:"1px solid rgba(201,168,76,0.35)",background:"rgba(201,168,76,0.1)",color:GOLD,fontFamily:"DM Mono,monospace",fontWeight:700,cursor:"pointer",letterSpacing:"0.06em"}}>
+                    {conv.ai_generated ? "↺ REGENERATE" : "✦ GENERATE AI NARRATIVE"}
                   </button>
-                  <button onClick={()=>{setShowKeyInput(v=>!v);setKeyInput("");}} style={{fontSize:8,padding:"5px 10px",borderRadius:5,border:"1px solid rgba(255,255,255,0.12)",background:"rgba(255,255,255,0.04)",color:geminiKey?"#4ade80":"rgba(255,255,255,0.4)",fontFamily:"DM Mono,monospace",cursor:"pointer",letterSpacing:"0.04em"}}>
-                    {geminiKey ? "✓ KEY SET" : "SET GEMINI KEY"}
-                  </button>
-                  {conv.ai_generated && !convGenError && (
-                    <span style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>AI draft · {conv.ai_generated_at ? new Date(conv.ai_generated_at).toLocaleDateString() : ""} · Edit before publishing</span>
-                  )}
-                </div>
-                {convGenError && <span style={{fontSize:8,color:"#ef4444",fontFamily:"DM Mono,monospace",lineHeight:1.4}}>{convGenError}</span>}
-                {(showKeyInput || !geminiKey) && (
-                  <div style={{display:"flex",flexDirection:"column",gap:6,background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:6,padding:"10px 12px"}}>
-                    <div style={{fontSize:8,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace"}}>GEMINI API KEY — get a free key at aistudio.google.com/apikey (starts with AIza...)</div>
-                    <div style={{display:"flex",gap:8}}>
-                      <input type="password" value={keyInput} onChange={e=>setKeyInput(e.target.value)} placeholder="Paste your Gemini API key here" style={{flex:1,background:"rgba(255,255,255,0.06)",border:"1px solid rgba(255,255,255,0.12)",borderRadius:5,color:"#fff",fontFamily:"DM Mono,monospace",fontSize:9,padding:"6px 10px",outline:"none"}} onKeyDown={e=>{if(e.key==="Enter"&&keyInput.trim()){const k=keyInput.trim();localStorage.setItem("aramis_gemini_key",k);setGeminiKey(k);setShowKeyInput(false);setKeyInput("");setConvGenError("");}}} />
-                      <button onClick={()=>{const k=keyInput.trim();if(k){localStorage.setItem("aramis_gemini_key",k);setGeminiKey(k);setShowKeyInput(false);setKeyInput("");setConvGenError("");}}} style={{padding:"6px 14px",borderRadius:5,border:"1px solid rgba(74,222,128,0.4)",background:"rgba(74,222,128,0.1)",color:"#4ade80",fontFamily:"DM Mono,monospace",fontSize:9,fontWeight:700,cursor:"pointer"}}>SAVE</button>
-                      {geminiKey&&<button onClick={()=>{localStorage.removeItem("aramis_gemini_key");setGeminiKey("");setShowKeyInput(false);}} style={{padding:"6px 10px",borderRadius:5,border:"1px solid rgba(239,68,68,0.3)",background:"rgba(239,68,68,0.08)",color:"#ef4444",fontFamily:"DM Mono,monospace",fontSize:9,cursor:"pointer"}}>CLEAR</button>}
-                    </div>
-                    <div style={{fontSize:7,color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace"}}>Stored in this browser only — never sent to any server except Google's API</div>
-                  </div>
                 )}
+                {conv.ai_generated && !convGenLoading && (
+                  <span style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>AI · {conv.ai_generated_at ? new Date(conv.ai_generated_at).toLocaleDateString() : ""} · Edit before publishing</span>
+                )}
+                {convGenError && <span style={{fontSize:8,color:"#ef4444",fontFamily:"DM Mono,monospace",lineHeight:1.4,flex:"1 1 100%"}}>{convGenError}</span>}
               </div>
               {[
                 {key:"headline",label:"HEADLINE THESIS",placeholder:"Single sentence — the core thesis in plain English",rows:2},
