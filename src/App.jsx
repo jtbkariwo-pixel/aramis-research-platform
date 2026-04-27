@@ -425,51 +425,38 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function PerfChart({ticker, exchange, sectorETF}) {
-  const id = `tvperf${ticker.replace(/[^a-z0-9]/gi,"")}`;
-  useEffect(() => {
-    const compareSymbols = [
-      {symbol:"AMEX:SPY",position:"SameScale"},
-      {symbol:"NASDAQ:QQQ",position:"SameScale"},
-      ...(sectorETF?[{symbol:`AMEX:${sectorETF}`,position:"SameScale"}]:[])
-    ];
-    const makeWidget = () => {
-      if (!window.TradingView) return;
-      const el = document.getElementById(id);
-      if (!el) return;
-      el.innerHTML = "";
-      new window.TradingView.widget({
-        container_id: id,
-        width: el.offsetWidth||900,
-        height: 460,
-        symbol: `${exchange}:${ticker}`,
-        interval: "W",
-        timezone: "Etc/UTC",
-        theme: "dark",
-        style: "2",
-        locale: "en",
-        enable_publishing: false,
-        allow_symbol_change: false,
-        withdateranges: true,
-        compare_symbols: compareSymbols
-      });
-    };
-    if (window.TradingView) {
-      makeWidget();
-    } else {
-      let s = document.getElementById("tvjs");
-      if (!s) {
-        s = document.createElement("script");
-        s.id = "tvjs";
-        s.src = "https://s.tradingview.com/tv.js";
-        s.async = true;
-        document.head.appendChild(s);
-      }
-      s.addEventListener("load", makeWidget);
-      if (window.TradingView) makeWidget();
-    }
-    return () => { const el = document.getElementById(id); if (el) el.innerHTML = ""; };
-  }, [ticker, exchange, sectorETF]);
-  return <div id={id} style={{width:"100%",height:460}} />;
+  const [range, setRange] = useState("12M");
+  const charts = [
+    {sym:`${exchange}:${ticker}`, label:ticker, color:GOLD},
+    {sym:"AMEX:SPY", label:"S&P 500 — SPY", color:"#60a5fa"},
+    {sym:"NASDAQ:QQQ", label:"NASDAQ 100 — QQQ", color:"#a78bfa"},
+    ...(sectorETF?[{sym:`AMEX:${sectorETF}`, label:`${sectorETF} Sector ETF`, color:"#34d399"}]:[])
+  ];
+  return (
+    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+      <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+        <span style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginRight:2}}>PERIOD</span>
+        {["1M","3M","6M","12M","3Y","5Y"].map(r=>(
+          <button key={r} onClick={()=>setRange(r)} style={{fontSize:8,padding:"3px 9px",borderRadius:4,border:`1px solid ${range===r?GOLD:"rgba(255,255,255,0.1)"}`,background:range===r?"rgba(201,168,76,0.12)":"transparent",color:range===r?GOLD:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",cursor:"pointer",letterSpacing:"0.04em"}}>{r}</button>
+        ))}
+      </div>
+      {charts.map(({sym,label,color})=>(
+        <div key={sym} style={{borderRadius:7,overflow:"hidden",border:`1px solid ${color}22`}}>
+          <div style={{padding:"5px 10px",background:`${color}0d`,display:"flex",alignItems:"center",gap:7}}>
+            <div style={{width:8,height:8,borderRadius:"50%",background:color,flexShrink:0}}/>
+            <span style={{fontSize:9,color,fontFamily:"DM Mono,monospace",fontWeight:700,letterSpacing:"0.04em"}}>{label}</span>
+          </div>
+          <iframe
+            key={`${sym}-${range}`}
+            src={`https://s.tradingview.com/widgetembed/?symbol=${sym}&interval=W&theme=dark&style=2&locale=en&range=${range}&timezone=Etc%2FUTC&hidesidetoolbar=1&toolbarbg=111120&enable_publishing=0&allow_symbol_change=0`}
+            style={{width:"100%",height:140,border:"none",display:"block"}}
+            title={label}
+          />
+        </div>
+      ))}
+      <div style={{fontSize:7,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>Weekly · Same period · Powered by TradingView</div>
+    </div>
+  );
 }
 
 function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, watchlistEntry, onWatchlistEntry, conviction, onConviction, activityLogs, onLogActivity, universe }) {
@@ -496,45 +483,25 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const generateConviction = async () => {
     setConvGenLoading(true);
     setConvGenError("");
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY || "";
+    if (!apiKey) { setConvGenError("VITE_GEMINI_API_KEY not found in build — check Vercel environment variables."); setConvGenLoading(false); return; }
     try {
       const scoreData = calcAramisScore(c);
-      const response = await fetch("/api/generate-narrative", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({
-          name: c.name, ticker: c.ticker, price: c.price, pe: c.pe,
-          opMargin: c.opMargin, revenueGrowth: c.revenueGrowth, roic: c.roic,
-          score: scoreData?.total, riskTier: c.riskTier, sector: c.sector, mktCap: c.mktCap
-        })
-      });
+      const prompt = `You are a senior research analyst at Aramis Capital, a Zimbabwean-based institutional investment firm.\n\nWrite a structured investment conviction narrative for ${c.name||c.ticker} (${c.ticker}) using the following data:\n- Current Price: $${c.price}\n- P/E Ratio: ${c.pe?c.pe+"x":"N/A"}\n- Operating Margin: ${c.opMargin!=null?c.opMargin+"%":"N/A"}\n- Revenue Growth: ${c.revenueGrowth?c.revenueGrowth+"%":"N/A"}\n- ROIC: ${c.roic?c.roic+"%":"N/A"}\n- Aramis Score: ${scoreData?scoreData.total+"/100":"N/A"}\n- Tier: ${c.riskTier?"Tier "+c.riskTier:"Unclassified"}\n- Sector: ${c.sector||"Unknown"}\n- Market Cap: ${c.mktCap||"N/A"}\n\nYour response must be a JSON object with exactly these keys:\n{"headline":"Single sentence capturing the core investment thesis (max 20 words)","why_now":"1-2 sentences on what makes this the right moment to own this stock","business_moat":"1-2 sentences on the competitive advantage and business quality","financial_health":"1 sentence on balance sheet and cash generation strength","growth_trajectory":"1 sentence on the growth profile","management_quality":"1 sentence on capital allocation track record","valuation":"1 sentence on whether the stock is cheap, fair, or expensive","key_risks":"1-2 sentences on the primary risks to the thesis","client_summary":"3 sentences in plain English suitable for a sophisticated private investor"}\n\nTone: institutional and measured. Return only the JSON object, no other text.`;
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({contents:[{parts:[{text:prompt}]}],generationConfig:{maxOutputTokens:1200,temperature:0.7}})});
       const data = await response.json();
-      if (!response.ok) { setConvGenError(data.error || "Generation failed"); return; }
-      const p = data.narrative;
-      const aiConv = {
-        ...conv,
-        headline: p.headline||conv.headline, why_now: p.why_now||conv.why_now,
-        business_moat: p.business_moat, financial_health: p.financial_health,
-        growth_trajectory: p.growth_trajectory, management_quality: p.management_quality,
-        valuation: p.valuation, key_risks: p.key_risks||conv.key_risks,
-        client_summary: p.client_summary||conv.client_summary,
-        ai_generated: true, ai_generated_at: new Date().toISOString(),
-        last_updated: new Date().toISOString(), updated_by: "AI"
-      };
-      if (onConviction) onConviction(c.ticker, aiConv);
-    } catch (err) {
-      setConvGenError(`Error: ${err.message}`);
-    } finally {
-      setConvGenLoading(false);
-    }
+      if (!response.ok) { setConvGenError(data.error?.message||"Gemini API error"); return; }
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text||"";
+      const parsed = JSON.parse(text.replace(/```json|```/g,"").trim());
+      if (onConviction) onConviction(c.ticker,{...conv,headline:parsed.headline||conv.headline,why_now:parsed.why_now||conv.why_now,business_moat:parsed.business_moat,financial_health:parsed.financial_health,growth_trajectory:parsed.growth_trajectory,management_quality:parsed.management_quality,valuation:parsed.valuation,key_risks:parsed.key_risks||conv.key_risks,client_summary:parsed.client_summary||conv.client_summary,ai_generated:true,ai_generated_at:new Date().toISOString(),last_updated:new Date().toISOString(),updated_by:"AI"});
+    } catch(err){ setConvGenError(`Error: ${err.message}`); } finally { setConvGenLoading(false); }
   };
-  useEffect(() => {
-    if (!isInternal) return;
-    if (conv.headline) return;
-    if (autoGenAttempted.current[c.ticker]) return;
-    autoGenAttempted.current[c.ticker] = true;
-    const t = setTimeout(generateConviction, 700);
-    return () => clearTimeout(t);
-  }, [c.ticker]);
+  useEffect(()=>{
+    if(!isInternal||conv.headline||autoGenAttempted.current[c.ticker]||!import.meta.env.VITE_GEMINI_API_KEY)return;
+    autoGenAttempted.current[c.ticker]=true;
+    const t=setTimeout(generateConviction,700);
+    return()=>clearTimeout(t);
+  },[c.ticker]);
   const Stat=({label,value,sub,color})=>(
     <div style={{background:"rgba(255,255,255,0.03)",borderRadius:7,padding:"9px 11px"}}>
       <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",marginBottom:3}}>{label}</div>
