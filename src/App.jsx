@@ -447,37 +447,33 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const generateConviction = async () => {
     setConvGenLoading(true);
     setConvGenError("");
-    const apiKey = (typeof import.meta !== "undefined" && import.meta?.env?.VITE_ANTHROPIC_API_KEY)
-      || (typeof process !== "undefined" && process.env?.REACT_APP_ANTHROPIC_API_KEY)
-      || "";
+    const apiKey = (typeof import.meta !== "undefined" && import.meta?.env?.VITE_OPENAI_API_KEY) || "";
     if (!apiKey) {
-      setConvGenError("API key not configured. Set VITE_ANTHROPIC_API_KEY in Vercel environment variables.");
+      setConvGenError("API key not configured. Add VITE_OPENAI_API_KEY in Vercel → Settings → Environment Variables, then redeploy.");
       setConvGenLoading(false);
       return;
     }
     try {
       const scoreData = calcAramisScore(c);
       const prompt = `You are a senior research analyst at Aramis Capital, a Zimbabwean-based institutional investment firm.\n\nWrite a structured investment conviction narrative for ${c.name} (${c.ticker}) using the following data:\n- Current Price: $${c.price}\n- P/E Ratio: ${c.pe ? c.pe + 'x' : 'N/A'}\n- Operating Margin: ${c.opMargin != null ? c.opMargin + '%' : 'N/A'}\n- Revenue Growth: ${c.revenueGrowth ? c.revenueGrowth + '%' : 'N/A'}\n- ROIC: ${c.roic ? c.roic + '%' : 'N/A'}\n- Aramis Score: ${scoreData ? scoreData.total + '/100' : 'N/A'}\n- Tier: ${c.riskTier ? 'Tier ' + c.riskTier : 'Unclassified'}\n- Sector: ${c.sector || 'Unknown'}\n- Market Cap: ${c.mktCap || 'N/A'}\n\nYour response must be a JSON object with exactly these keys:\n{\n  "headline": "Single sentence capturing the core investment thesis (max 20 words)",\n  "why_now": "1-2 sentences on what makes this the right moment to own this stock",\n  "business_moat": "1-2 sentences on the competitive advantage and business quality",\n  "financial_health": "1 sentence on balance sheet and cash generation strength",\n  "growth_trajectory": "1 sentence on the growth profile",\n  "management_quality": "1 sentence on capital allocation track record",\n  "valuation": "1 sentence on whether the stock is cheap, fair, or expensive",\n  "key_risks": "1-2 sentences on the primary risks to the thesis",\n  "client_summary": "3 sentences in plain English suitable for a sophisticated private investor"\n}\n\nTone: institutional and measured. Return only the JSON object, no other text.`;
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": apiKey,
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true"
+          "Authorization": `Bearer ${apiKey}`
         },
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
+          model: "gpt-4o-mini",
           max_tokens: 1200,
           messages: [{ role: "user", content: prompt }]
         })
       });
       const data = await response.json();
       if (!response.ok) {
-        setConvGenError(`API error ${response.status}: ${data.error?.message || "Unknown error"}`);
+        setConvGenError(`OpenAI error ${response.status}: ${data.error?.message || "Unknown error"}`);
         return;
       }
-      const text = data.content?.[0]?.text || "";
+      const text = data.choices?.[0]?.message?.content || "";
       const clean = text.replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(clean);
       const aiConv = {
