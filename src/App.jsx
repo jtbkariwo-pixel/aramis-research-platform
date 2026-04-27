@@ -425,9 +425,51 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function PerfChart({ticker, exchange, sectorETF}) {
-  const compare = ["AMEX:SPY","AMEX:QQQ",...(sectorETF?[`AMEX:${sectorETF}`]:[])].join(",");
-  const src = `https://s.tradingview.com/widgetembed/?symbol=${exchange}:${ticker}&interval=W&theme=dark&style=2&locale=en&compare=${compare}&timezone=Etc%2FUTC&withdateranges=1&toolbarbg=111120&hidesidetoolbar=0&enable_publishing=0&allow_symbol_change=0`;
-  return <iframe src={src} style={{width:"100%",height:460,border:"none",display:"block"}} title={`${ticker} performance`} />;
+  const id = `tvperf${ticker.replace(/[^a-z0-9]/gi,"")}`;
+  useEffect(() => {
+    const compareSymbols = [
+      {symbol:"AMEX:SPY",position:"SameScale"},
+      {symbol:"NASDAQ:QQQ",position:"SameScale"},
+      ...(sectorETF?[{symbol:`AMEX:${sectorETF}`,position:"SameScale"}]:[])
+    ];
+    const makeWidget = () => {
+      if (!window.TradingView) return;
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = "";
+      new window.TradingView.widget({
+        container_id: id,
+        width: el.offsetWidth||900,
+        height: 460,
+        symbol: `${exchange}:${ticker}`,
+        interval: "W",
+        timezone: "Etc/UTC",
+        theme: "dark",
+        style: "2",
+        locale: "en",
+        enable_publishing: false,
+        allow_symbol_change: false,
+        withdateranges: true,
+        compare_symbols: compareSymbols
+      });
+    };
+    if (window.TradingView) {
+      makeWidget();
+    } else {
+      let s = document.getElementById("tvjs");
+      if (!s) {
+        s = document.createElement("script");
+        s.id = "tvjs";
+        s.src = "https://s.tradingview.com/tv.js";
+        s.async = true;
+        document.head.appendChild(s);
+      }
+      s.addEventListener("load", makeWidget);
+      if (window.TradingView) makeWidget();
+    }
+    return () => { const el = document.getElementById(id); if (el) el.innerHTML = ""; };
+  }, [ticker, exchange, sectorETF]);
+  return <div id={id} style={{width:"100%",height:460}} />;
 }
 
 function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, watchlistEntry, onWatchlistEntry, conviction, onConviction, activityLogs, onLogActivity, universe }) {
