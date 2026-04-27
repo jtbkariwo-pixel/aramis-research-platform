@@ -425,52 +425,46 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
 function PerfChart({ticker, exchange, sectorETF}) {
-  const divRef = useRef(null);
+  const containerRef = useRef(null);
   useEffect(() => {
-    if (!divRef.current) return;
-    const containerId = `tv-perf-${ticker}-${Math.random().toString(36).slice(2,8)}`;
-    divRef.current.id = containerId;
-    divRef.current.innerHTML = '';
+    if (!containerRef.current) return;
     const compareSymbols = [
-      {symbol:"SP:SPX",position:"SameScale"},
-      {symbol:"AMEX:QQQ",position:"SameScale"},
+      {symbol:"AMEX:SPY",position:"SameScale"},
+      {symbol:"NASDAQ:QQQ",position:"SameScale"},
       ...(sectorETF?[{symbol:`AMEX:${sectorETF}`,position:"SameScale"}]:[])
     ];
-    const createWidget = () => {
-      if (!window.TradingView || !divRef.current) return;
-      new window.TradingView.widget({
-        container_id: containerId,
-        autosize: true,
-        symbol: `${exchange}:${ticker}`,
-        interval: "W",
-        timezone: "exchange",
-        theme: "dark",
-        style: "2",
-        locale: "en",
-        toolbar_bg: "#111120",
-        enable_publishing: false,
-        allow_symbol_change: false,
-        withdateranges: true,
-        compare_symbols: compareSymbols
-      });
-    };
-    if (window.TradingView) {
-      createWidget();
-    } else {
-      let script = document.getElementById('tv-widget-script');
-      if (!script) {
-        script = document.createElement('script');
-        script.id = 'tv-widget-script';
-        script.src = 'https://s.tradingview.com/tv.js';
-        script.async = true;
-        document.head.appendChild(script);
-      }
-      const poll = setInterval(() => { if (window.TradingView) { clearInterval(poll); createWidget(); } }, 150);
-      return () => clearInterval(poll);
-    }
-    return () => { if (divRef.current) divRef.current.innerHTML = ''; };
+    const config = JSON.stringify({
+      autosize: true,
+      symbol: `${exchange}:${ticker}`,
+      interval: "W",
+      timezone: "Etc/UTC",
+      theme: "dark",
+      style: "2",
+      locale: "en",
+      enable_publishing: false,
+      allow_symbol_change: false,
+      compare_symbols: compareSymbols,
+      calendar: false,
+      support_host: "https://www.tradingview.com"
+    });
+    const wrapper = document.createElement("div");
+    wrapper.className = "tradingview-widget-container";
+    wrapper.style.cssText = "height:460px;width:100%";
+    const inner = document.createElement("div");
+    inner.className = "tradingview-widget-container__widget";
+    inner.style.cssText = "height:428px;width:100%";
+    const script = document.createElement("script");
+    script.type = "text/javascript";
+    script.async = true;
+    script.src = "https://s.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    script.textContent = config;
+    wrapper.appendChild(inner);
+    wrapper.appendChild(script);
+    containerRef.current.innerHTML = "";
+    containerRef.current.appendChild(wrapper);
+    return () => { if (containerRef.current) containerRef.current.innerHTML = ""; };
   }, [ticker, exchange, sectorETF]);
-  return <div ref={divRef} style={{width:"100%",height:460}} />;
+  return <div ref={containerRef} style={{width:"100%",height:460}} />;
 }
 
 function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, watchlistEntry, onWatchlistEntry, conviction, onConviction, activityLogs, onLogActivity, universe }) {
