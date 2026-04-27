@@ -13,6 +13,127 @@ const FMP_BASE    = "https://financialmodelingprep.com";
 // Rate limiter Ã¢ÂÂ free tier: 250 calls/day, ~10/min safe
 const callQueue = [];
 let lastCall = 0;
+
+// ── ALPHA VANTAGE API LAYER ───────────────────────────────────────────────
+// Free tier: 25 requests/day, 5 requests/min — used for African/JSE stocks
+const AV_API_KEY = "9GF9HEJDJFFGT9MM";
+const AV_BASE    = "https://www.alphavantage.co/query";
+let avLastCall   = 0;
+
+async function avFetch(params = {}) {
+  const now = Date.now();
+  const gap = now - avLastCall;
+  if (gap < 1300) await new Promise(r => setTimeout(r, 1300 - gap));
+  avLastCall = Date.now();
+  const query = new URLSearchParams({ ...params, apikey: AV_API_KEY }).toString();
+  const res = await fetch(`${AV_BASE}?${query}`);
+  if (!res.ok) throw new Error(`AV ${res.status}`);
+  const data = await res.json();
+  const msg = data.Note || data.Information || "";
+  if (msg.includes("API call frequency") || msg.includes("per minute")) throw new Error("AV_RATE_LIMITED");
+  if (msg.includes("premium") || msg.includes("Thank you for using Alpha Vantage")) throw new Error("AV_LIMIT_REACHED");
+  return data;
+}
+
+async function loadAVCompanyData(ticker) {
+  try {
+    const [ovResult, qResult] = await Promise.allSettled([
+      avFetch({ function: "OVERVIEW",     symbol: ticker }),
+      avFetch({ function: "GLOBAL_QUOTE", symbol: ticker }),
+    ]);
+    const overview = ovResult.status === "fulfilled" ? ovResult.value : null;
+    const quoteRaw = qResult.status  === "fulfilled" ? qResult.value  : null;
+    return { overview, quote: quoteRaw?.["Global Quote"] || null };
+  } catch (e) {
+    console.error("loadAVCompanyData error:", e);
+    return null;
+  }
+}
+
+function transformAVData(ticker, raw, seed = {}) {
+  const ov = raw?.overview || {};
+  const q  = raw?.quote    || {};
+
+  const price         = parseFloat(q["05. price"] || 0) || parseFloat(ov.AnalystTargetPrice || 0) || 0;
+  const pe            = parseFloat(ov.TrailingPE  || 0) || 0;
+  const opMarginRaw   = parseFloat(ov.OperatingMarginTTM || 0);
+  const opMargin      = opMarginRaw ? +(opMarginRaw  * 100).toFixed(2) : null;
+  const netMarginRaw  = parseFloat(ov.ProfitMargin  || 0);
+  const netMargin     = netMarginRaw ? +(netMarginRaw * 100).toFixed(2) : null;
+  const revenueTTM    = parseFloat(ov.RevenueTTM    || 0);
+  const rvGrowthRaw   = parseFloat(ov.QuarterlyRevenueGrowthYOY || 0);
+  const revenueGrowth = rvGrowthRaw ? Math.round(rvGrowthRaw * 100) : 0;
+  const revenueStr    = revenueTTM >= 1e12 ? `$${(revenueTTM/1e12).toFixed(1)}T` : revenueTTM >= 1e9 ? `$${(revenueTTM/1e9).toFixed(0)}B` : `$${(revenueTTM/1e6).toFixed(0)}M`;
+  const mktCapRaw     = parseFloat(ov.MarketCapitalization || 0);
+  const mktCapFmt     = mktCapRaw >= 1e12 ? `$${(mktCapRaw/1e12).toFixed(1)}T` : mktCapRaw >= 1e9 ? `$${(mktCapRaw/1e9).toFixed(0)}B` : `$${(mktCapRaw/1e6).toFixed(0)}M`;
+  const evEbitdaRaw   = parseFloat(ov.EVToEBITDA || 0);
+  const evEbitda      = evEbitdaRaw > 0 ? Math.round(evEbitdaRaw) : 0;
+  const roicRaw       = parseFloat(ov.ReturnOnEquityTTM || 0);
+  const roic          = roicRaw ? Math.round(roicRaw * 100) : null;
+  const week52High    = parseFloat(ov["52WeekHigh"] || 0);
+  const week52Low     = parseFloat(ov["52WeekLow"]  || 0);
+
+  const scores = {
+    valuation:  Math.min(100, Math.max(0, pe > 0 && pe < 15 ? 70 : pe < 25 ? 55 : pe < 35 ? 40 : 30)),
+    growth:     Math.min(100, Math.max(0, Math.round(40 + revenueGrowth * 1.2))),
+    health:     Math.min(100, Math.max(0, Math.round(50 + (opMargin > 20 ? 20 : opMargin || 0)))),
+    moat:       Math.min(100, Math.max(0, Math.round(40 + (opMargin || 0) * 0.8 + (roic > 15 ? 20 : roic || 0)))),
+    africa:     72,
+    governance: Math.min(100, Math.max(0, Math.round(60 + (roic > 10 ? 20 : 0) + (netMargin > 15 ? 20 : 0)))),
+  };
+
+  return {
+    id:             ticker,
+    name:           ov.Name   || seed.name || ticker,
+    ticker,
+    exchange:       ov.Exchange || seed.exchange || "—",
+    sector:         ov.Sector   || seed.sector   || "—",
+    industry:       ov.Industry || "—",
+    country:        ov.Country  || "—",
+    theme:          seed.theme  || "—",
+    price,
+    mktCap:         mktCapFmt,
+    currency:       ov.Currency || "USD",
+    icStatus:       seed.icStatus || "Not Screened",
+    riskTier:       seed.riskTier || 2,
+    pe:             pe > 0 ? Math.round(pe) : 0,
+    evEbitda,
+    revenue:        revenueStr,
+    revenueGrowth,
+    opMargin,
+    netMargin,
+    fcfMargin:      0,
+    roic,
+    wacc:           8,
+    netDebt:        0,
+    moat:           "—",
+    moatDurability: "—",
+    scores,
+    description:    ov.Description || "",
+    website:        "",
+    ceo:            "",
+    employees:      parseInt(ov.FullTimeEmployees || 0) || 0,
+    dcfValue:       "—",
+    analystNote:    `Live data from Alpha Vantage. Revenue ${revenueStr}, growing ${revenueGrowth}% YoY. P/E ${pe > 0 ? Math.round(pe) + "x" : "N/A"}.`,
+    bear:           { ret: Math.round(revenueGrowth * 0.3 - 5), prob: 25 },
+    base:           { ret: Math.round(revenueGrowth * 0.6),     prob: 55 },
+    bull:           { ret: Math.round(revenueGrowth * 1.0 + 5), prob: 20 },
+    entryBand:      [Math.round(price * 0.85 * 100)/100, Math.round(price * 0.92 * 100)/100],
+    holdBand:       [Math.round(price * 0.92 * 100)/100, Math.round(price * 1.15 * 100)/100],
+    trimZone:       Math.round(price * 1.25 * 100)/100,
+    news:           [],
+    income:         [],
+    balance:        [],
+    cashflow:       [],
+    dividends:      [],
+    earnings:       [],
+    isLive:         true,
+    dataSource:     "AV",
+    week52High,
+    week52Low,
+  };
+}
+
 async function fmpFetch(endpoint, params = {}) {
   const query = new URLSearchParams({ ...params, apikey: FMP_API_KEY }).toString();
   const url = `${FMP_BASE}${endpoint}?${query}`;
@@ -338,6 +459,11 @@ const SEED_TICKERS = [
   { ticker:"LLY",  name:"Eli Lilly",  exchange:"NYSE",   sector:"Healthcare",  theme:"Healthcare Innovation",       icStatus:"Conditional", riskTier:2 },
   { ticker:"TSM",  name:"TSMC",       exchange:"NYSE",   sector:"Technology",  theme:"Semiconductor",               icStatus:"Approved",    riskTier:2 },
   { ticker:"BLK",  name:"BlackRock",  exchange:"NYSE",   sector:"Financials",  theme:"Financial Infrastructure",    icStatus:"Approved",    riskTier:1 },
+  // African stocks — loaded via Alpha Vantage (useAV:true)
+  { ticker:"NPN.JO",  name:"Naspers",        exchange:"JSE",  sector:"Technology",  theme:"Africa Digital Infrastructure",   icStatus:"Under Review", riskTier:2, useAV:true },
+  { ticker:"MTN.JO",  name:"MTN Group",      exchange:"JSE",  sector:"Telecoms",    theme:"Africa Digital Infrastructure",   icStatus:"Under Review", riskTier:2, useAV:true },
+  { ticker:"SBK.JO",  name:"Standard Bank",  exchange:"JSE",  sector:"Financials",  theme:"Africa Financial Infrastructure", icStatus:"Under Review", riskTier:2, useAV:true },
+  { ticker:"AGL.JO",  name:"Anglo American", exchange:"JSE",  sector:"Materials",   theme:"Africa Resources",                icStatus:"Under Review", riskTier:3, useAV:true },
 ];
 
 const THEME_COLORS = { "AI Infrastructure":"#7c3aed","Semiconductor":"#2563eb","Financial Infrastructure":"#0891b2","Healthcare Innovation":"#059669","Africa Financial Infrastructure":"#C9A84C","Africa Digital Infrastructure":"#ea580c","Energy":"#65a30d","Industrial":"#6b7280","Ã¢ÂÂ":"#444" };
@@ -388,7 +514,7 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
     <div onClick={()=>onClick(c)} style={{background:selected?"rgba(201,168,76,0.06)":"rgba(255,255,255,0.02)",border:`1px solid ${selected?"rgba(201,168,76,0.28)":"rgba(255,255,255,0.06)"}`,borderRadius:10,padding:"13px",cursor:"pointer",transition:"all 0.15s",display:"flex",flexDirection:"column",gap:8,position:"relative",opacity:cardLoading?0.6:1}}>
       {cardLoading && <div style={{position:"absolute",top:8,right:8,width:8,height:8,borderRadius:"50%",border:"1.5px solid rgba(201,168,76,0.3)",borderTopColor:GOLD,animation:"spin 0.7s linear infinite"}}/>}
       {c.dataUnavailable && !cardLoading && <div style={{position:"absolute",top:6,right:6,fontSize:7,padding:"1px 5px",borderRadius:3,background:"rgba(239,68,68,0.15)",color:"#ef4444",fontFamily:"DM Mono,monospace",border:"1px solid rgba(239,68,68,0.25)"}}>Data unavailable</div>}
-      {c.isLive && !c.dataUnavailable && <div style={{position:"absolute",top:8,right:8,width:6,height:6,borderRadius:"50%",background:"#22c55e"}} title="Live FMP data"/>}
+      {c.isLive && !c.dataUnavailable && <div style={{position:"absolute",top:8,right:8,width:6,height:6,borderRadius:"50%",background:"#22c55e"}} title={c.dataSource==="AV"?"Live Alpha Vantage data":"Live FMP data"}/>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
         <div>
           <div style={{fontSize:14,fontWeight:800,color:"#fff",fontFamily:"Syne,sans-serif",lineHeight:1}}>{c.ticker}</div>
@@ -442,49 +568,30 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const spread = (c.roic||0) - (c.wacc||8);
   const generateConviction = async () => {
     setConvGenLoading(true);
+    setConvGenError("");
     try {
-      const prompt = `You are a senior research analyst at Aramis Capital, a Zimbabwean-based institutional investment firm.\n\nWrite a structured investment conviction narrative for ${c.name} (${c.ticker}) using the following data:\n- Current Price: $${c.price}\n- P/E Ratio: ${c.pe ? c.pe + 'x' : 'N/A'}\n- Operating Margin: ${c.operatingMargin ? c.operatingMargin + '%' : 'N/A'}\n- Revenue Growth: ${c.revenueGrowth ? c.revenueGrowth + '%' : 'N/A'}\n- ROIC: ${c.roic ? c.roic + '%' : 'N/A'}\n- Aramis Score: ${calcAramisScore(c).total}/100\n- Tier: ${c.tier || 'Unclassified'}\n- Sector: ${c.sector || 'Unknown'}\n- Market Cap: ${c.marketCap ? '$' + (c.marketCap / 1e9).toFixed(1) + 'B' : 'N/A'}\n\nYour response must be a JSON object with exactly these keys:\n{\n  "headline": "Single sentence capturing the core investment thesis (max 20 words)",\n  "why_now": "1-2 sentences on what makes this the right moment to own this stock",\n  "business_moat": "1-2 sentences on the competitive advantage and business quality",\n  "financial_health": "1 sentence on balance sheet and cash generation strength",\n  "growth_trajectory": "1 sentence on the growth profile",\n  "management_quality": "1 sentence on capital allocation track record",\n  "valuation": "1 sentence on whether the stock is cheap, fair, or expensive",\n  "key_risks": "1-2 sentences on the primary risks to the thesis",\n  "client_summary": "3 sentences in plain English suitable for a sophisticated private investor"\n}\n\nTone: institutional and measured. Return only the JSON object, no other text.`;
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+      const scoreData = calcAramisScore(c);
+      const response = await fetch("/api/generate-narrative", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": process.env.REACT_APP_ANTHROPIC_API_KEY || "",
-          "anthropic-version": "2023-06-01",
-          "anthropic-dangerous-direct-browser-access": "true"
-        },
+        headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
-          model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
-          messages: [{ role: "user", content: prompt }]
+          name: c.name||c.ticker, ticker: c.ticker, price: c.price, pe: c.pe,
+          opMargin: c.opMargin, revenueGrowth: c.revenueGrowth, roic: c.roic,
+          score: scoreData?.total, riskTier: c.riskTier, sector: c.sector, mktCap: c.mktCap
         })
       });
       const data = await response.json();
-      const text = data.content?.[0]?.text || "";
-      const clean = text.replace(/```json|```/g, "").trim();
-      const parsed = JSON.parse(clean);
-      const aiConv = {
-        ...conv,
-        headline: parsed.headline || conv.headline,
-        why_now: parsed.why_now || conv.why_now,
-        business_moat: parsed.business_moat,
-        financial_health: parsed.financial_health,
-        growth_trajectory: parsed.growth_trajectory,
-        management_quality: parsed.management_quality,
-        valuation: parsed.valuation,
-        key_risks: parsed.key_risks || conv.key_risks,
-        client_summary: parsed.client_summary || conv.client_summary,
-        ai_generated: true,
-        ai_generated_at: new Date().toISOString(),
-        last_updated: new Date().toISOString(),
-        updated_by: "AI"
-      };
-      if (onConviction) onConviction(c.ticker, aiConv);
-    } catch (err) {
-      console.error("[Aramis] AI conviction generation failed:", err);
-    } finally {
-      setConvGenLoading(false);
-    }
+      if (!response.ok) { setConvGenError(data.error || "Generation failed"); return; }
+      const p = data.narrative;
+      if (onConviction) onConviction(c.ticker, {...conv, headline:p.headline||conv.headline, why_now:p.why_now||conv.why_now, business_moat:p.business_moat, financial_health:p.financial_health, growth_trajectory:p.growth_trajectory, management_quality:p.management_quality, valuation:p.valuation, key_risks:p.key_risks||conv.key_risks, client_summary:p.client_summary||conv.client_summary, ai_generated:true, ai_generated_at:new Date().toISOString(), last_updated:new Date().toISOString(), updated_by:"AI"});
+    } catch(err) { setConvGenError(`Error: ${err.message}`); } finally { setConvGenLoading(false); }
   };
+  useEffect(() => {
+    if (!isInternal || conv.headline || autoGenAttempted.current[c.ticker]) return;
+    autoGenAttempted.current[c.ticker] = true;
+    const t = setTimeout(generateConviction, 700);
+    return () => clearTimeout(t);
+  }, [c.ticker]);
   const Stat=({label,value,sub,color})=>(
     <div style={{background:"rgba(255,255,255,0.03)",borderRadius:7,padding:"9px 11px"}}>
       <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",marginBottom:3}}>{label}</div>
@@ -1553,6 +1660,17 @@ function Platform({ user, permissions, onLogout }) {
       for (const seed of SEED_TICKERS) {
         if (cancelled) break;
         try {
+          if (seed.useAV) {
+            const avRaw = await loadAVCompanyData(seed.ticker);
+            if (!avRaw || !avRaw.overview || !avRaw.overview.Symbol) {
+              setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false, dataUnavailable:true} : c));
+            } else {
+              const transformed = transformAVData(seed.ticker, avRaw, seed);
+              setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...transformed, loading:false} : c));
+            }
+            await new Promise(r => setTimeout(r, 1400)); // AV rate limit: 5/min
+            continue;
+          }
           const raw = await loadCompanyData(seed.ticker);
           if (!raw || !raw.profile) {
             setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false, dataUnavailable:true} : c));
@@ -1567,7 +1685,7 @@ function Platform({ user, permissions, onLogout }) {
         } catch (e) {
           setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false} : c));
         }
-        await new Promise(r => setTimeout(r, 400)); // rate limit spacing
+        await new Promise(r => setTimeout(r, 400)); // FMP rate limit spacing
       }
       if (!cancelled) setApiStatus("ok");
     };
@@ -1624,12 +1742,19 @@ function Platform({ user, permissions, onLogout }) {
 
   const addTicker = useCallback(async (ticker) => {
     if (universe.find(c => c.ticker === ticker)) return;
-    const stub = { ticker, name: ticker, exchange:"Ã¢ÂÂ", sector:"Ã¢ÂÂ", industry:"Ã¢ÂÂ", country:"Ã¢ÂÂ", theme:"Ã¢ÂÂ", icStatus:"Not Screened", riskTier:2, price:null, scores:null, isLive:false, loading:true };
+    const stub = { ticker, name: ticker, exchange:"—", sector:"—", industry:"—", country:"—", theme:"—", icStatus:"Not Screened", riskTier:2, price:null, scores:null, isLive:false, loading:true };
     setUniverse(prev => [stub, ...prev]);
     try {
       const raw = await loadCompanyData(ticker);
       if (raw?.profile) {
         const transformed = transformFMPData(ticker, raw);
+        setUniverse(prev => prev.map(c => c.ticker === ticker ? {...transformed, loading:false} : c));
+        return;
+      }
+      // FMP returned no data — try Alpha Vantage as fallback
+      const avRaw = await loadAVCompanyData(ticker);
+      if (avRaw?.overview?.Symbol) {
+        const transformed = transformAVData(ticker, avRaw);
         setUniverse(prev => prev.map(c => c.ticker === ticker ? {...transformed, loading:false} : c));
       } else {
         setUniverse(prev => prev.map(c => c.ticker === ticker ? {...c, loading:false, dataUnavailable:true} : c));
@@ -1684,7 +1809,7 @@ function Platform({ user, permissions, onLogout }) {
         {/* API status indicator */}
         <div style={{display:"flex",alignItems:"center",gap:5,padding:"3px 8px",borderRadius:6,background:apiStatus==="ok"?"rgba(34,197,94,0.08)":apiStatus==="demo"?"rgba(245,158,11,0.08)":"rgba(255,255,255,0.04)",border:`1px solid ${apiStatus==="ok"?"rgba(34,197,94,0.2)":apiStatus==="demo"?"rgba(245,158,11,0.2)":"rgba(255,255,255,0.08)"}`}}>
           <div style={{width:5,height:5,borderRadius:"50%",background:apiStatus==="ok"?"#22c55e":apiStatus==="demo"?"#f59e0b":"rgba(255,255,255,0.3)",animation:apiStatus==="loading"?"pulse 1s infinite":undefined}}/>
-          <span style={{fontSize:8,fontFamily:"DM Mono,monospace",color:apiStatus==="ok"?"#22c55e":apiStatus==="demo"?"#f59e0b":"rgba(255,255,255,0.4)"}}>{apiStatus==="ok"?`FMP LIVE ÃÂ· ${live}/${universe.length}`:apiStatus==="demo"?"FMP DEMO KEY":apiStatus==="loading"?"LOADING...":"FMP ERROR"}</span>
+          <span style={{fontSize:8,fontFamily:"DM Mono,monospace",color:apiStatus==="ok"?"#22c55e":apiStatus==="demo"?"#f59e0b":"rgba(255,255,255,0.4)"}}>{apiStatus==="ok"?`FMP+AV LIVE · ${live}/${universe.length}`:apiStatus==="demo"?"FMP DEMO KEY":apiStatus==="loading"?"LOADING...":"API ERROR"}</span>
         </div>
         <div style={{display:"flex",gap:12,alignItems:"center"}}>
           {[{l:"Approved",v:approved,c:"#22c55e"},{l:"Conditional",v:conditional,c:GOLD},{l:"In Review",v:inReview,c:"#60a5fa"}].map(s=>(
