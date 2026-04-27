@@ -229,6 +229,7 @@ function transformFMPData(ticker, raw) {
     theme:          "Ã¢ÂÂ",
     price,
     mktCap:         mktCapFmt,
+    marketCapRaw:   mktCap,
     currency:       "USD",
     icStatus:       "Not Screened",
     riskTier:       2,
@@ -237,8 +238,10 @@ function transformFMPData(ticker, raw) {
     revenue:        revenueStr,
     revenueGrowth,
     opMargin,
+    operatingMargin: opMargin,
     netMargin,
     fcfMargin,
+    fcfYield:       mktCap > 0 ? Math.round((fcf / mktCap) * 100 * 10) / 10 : null,
     roic,
     wacc,
     netDebt,
@@ -433,6 +436,7 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const convSaveTimer = useRef(null);
   const [convGenLoading, setConvGenLoading] = useState(false);
   const [showClientView, setShowClientView] = useState(false);
+  const [convGenError, setConvGenError] = useState("");
   const [chartInterval, setChartInterval] = useState("D");
   const [showCompare, setShowCompare] = useState(false);
   const [compareWith, setCompareWith] = useState([]);
@@ -442,23 +446,37 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const spread = (c.roic||0) - (c.wacc||8);
   const generateConviction = async () => {
     setConvGenLoading(true);
+    setConvGenError("");
+    const apiKey = (typeof import.meta !== "undefined" && import.meta?.env?.VITE_ANTHROPIC_API_KEY)
+      || (typeof process !== "undefined" && process.env?.REACT_APP_ANTHROPIC_API_KEY)
+      || "";
+    if (!apiKey) {
+      setConvGenError("API key not configured. Set VITE_ANTHROPIC_API_KEY in Vercel environment variables.");
+      setConvGenLoading(false);
+      return;
+    }
     try {
-      const prompt = `You are a senior research analyst at Aramis Capital, a Zimbabwean-based institutional investment firm.\n\nWrite a structured investment conviction narrative for ${c.name} (${c.ticker}) using the following data:\n- Current Price: $${c.price}\n- P/E Ratio: ${c.pe ? c.pe + 'x' : 'N/A'}\n- Operating Margin: ${c.operatingMargin ? c.operatingMargin + '%' : 'N/A'}\n- Revenue Growth: ${c.revenueGrowth ? c.revenueGrowth + '%' : 'N/A'}\n- ROIC: ${c.roic ? c.roic + '%' : 'N/A'}\n- Aramis Score: ${calcAramisScore(c).total}/100\n- Tier: ${c.tier || 'Unclassified'}\n- Sector: ${c.sector || 'Unknown'}\n- Market Cap: ${c.marketCap ? '$' + (c.marketCap / 1e9).toFixed(1) + 'B' : 'N/A'}\n\nYour response must be a JSON object with exactly these keys:\n{\n  "headline": "Single sentence capturing the core investment thesis (max 20 words)",\n  "why_now": "1-2 sentences on what makes this the right moment to own this stock",\n  "business_moat": "1-2 sentences on the competitive advantage and business quality",\n  "financial_health": "1 sentence on balance sheet and cash generation strength",\n  "growth_trajectory": "1 sentence on the growth profile",\n  "management_quality": "1 sentence on capital allocation track record",\n  "valuation": "1 sentence on whether the stock is cheap, fair, or expensive",\n  "key_risks": "1-2 sentences on the primary risks to the thesis",\n  "client_summary": "3 sentences in plain English suitable for a sophisticated private investor"\n}\n\nTone: institutional and measured. Return only the JSON object, no other text.`;
+      const scoreData = calcAramisScore(c);
+      const prompt = `You are a senior research analyst at Aramis Capital, a Zimbabwean-based institutional investment firm.\n\nWrite a structured investment conviction narrative for ${c.name} (${c.ticker}) using the following data:\n- Current Price: $${c.price}\n- P/E Ratio: ${c.pe ? c.pe + 'x' : 'N/A'}\n- Operating Margin: ${c.opMargin != null ? c.opMargin + '%' : 'N/A'}\n- Revenue Growth: ${c.revenueGrowth ? c.revenueGrowth + '%' : 'N/A'}\n- ROIC: ${c.roic ? c.roic + '%' : 'N/A'}\n- Aramis Score: ${scoreData ? scoreData.total + '/100' : 'N/A'}\n- Tier: ${c.riskTier ? 'Tier ' + c.riskTier : 'Unclassified'}\n- Sector: ${c.sector || 'Unknown'}\n- Market Cap: ${c.mktCap || 'N/A'}\n\nYour response must be a JSON object with exactly these keys:\n{\n  "headline": "Single sentence capturing the core investment thesis (max 20 words)",\n  "why_now": "1-2 sentences on what makes this the right moment to own this stock",\n  "business_moat": "1-2 sentences on the competitive advantage and business quality",\n  "financial_health": "1 sentence on balance sheet and cash generation strength",\n  "growth_trajectory": "1 sentence on the growth profile",\n  "management_quality": "1 sentence on capital allocation track record",\n  "valuation": "1 sentence on whether the stock is cheap, fair, or expensive",\n  "key_risks": "1-2 sentences on the primary risks to the thesis",\n  "client_summary": "3 sentences in plain English suitable for a sophisticated private investor"\n}\n\nTone: institutional and measured. Return only the JSON object, no other text.`;
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "x-api-key": process.env.REACT_APP_ANTHROPIC_API_KEY || "",
+          "x-api-key": apiKey,
           "anthropic-version": "2023-06-01",
           "anthropic-dangerous-direct-browser-access": "true"
         },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
-          max_tokens: 1000,
+          max_tokens: 1200,
           messages: [{ role: "user", content: prompt }]
         })
       });
       const data = await response.json();
+      if (!response.ok) {
+        setConvGenError(`API error ${response.status}: ${data.error?.message || "Unknown error"}`);
+        return;
+      }
       const text = data.content?.[0]?.text || "";
       const clean = text.replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(clean);
@@ -481,6 +499,7 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
       if (onConviction) onConviction(c.ticker, aiConv);
     } catch (err) {
       console.error("[Aramis] AI conviction generation failed:", err);
+      setConvGenError(`Generation failed: ${err.message}`);
     } finally {
       setConvGenLoading(false);
     }
@@ -525,12 +544,13 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             {k:"total",l:"Aramis Score",fmt:v=>`${v}/100`,better:"high",get:(comp)=>calcAramisScore(comp)?.total},
             {k:"pe",l:"P/E",fmt:v=>`${v}x`,better:"low"},
             {k:"evEbitda",l:"EV/EBITDA",fmt:v=>`${v}x`,better:"low"},
-            {k:"operatingMargin",l:"Op. Margin",fmt:v=>`${v}%`,better:"high"},
+            {k:"opMargin",l:"Op. Margin",fmt:v=>`${v}%`,better:"high"},
             {k:"netMargin",l:"Net Margin",fmt:v=>`${v}%`,better:"high"},
             {k:"roic",l:"ROIC",fmt:v=>`${v}%`,better:"high"},
             {k:"revenueGrowth",l:"Rev. Growth",fmt:v=>`${v}%`,better:"high"},
             {k:"fcfYield",l:"FCF Yield",fmt:v=>`${v}%`,better:"high"},
-            {k:"marketCap",l:"Market Cap",fmt:v=>`$${(v/1e9).toFixed(1)}B`,better:"none"},
+            {k:"fcfMargin",l:"FCF Margin",fmt:v=>`${v}%`,better:"high"},
+            {k:"marketCapRaw",l:"Market Cap",fmt:v=>`$${(v/1e9).toFixed(1)}B`,better:"none"},
             {k:"riskTier",l:"Tier",fmt:v=>`Tier ${v}`,better:"low"},
           ];
           const getVal=(comp,m)=>m.get?m.get(comp):comp[m.k];
@@ -635,7 +655,12 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             </div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
               {c.ceo&&<Stat label="CEO" value={c.ceo} sub={c.employees?`${c.employees?.toLocaleString()} employees`:""}/>}
-              {c.website&&<Stat label="Website" value={c.website?.replace("https://","").replace("http://","").split("/")[0]}/>}
+              {c.website&&(
+                <div style={{background:"rgba(255,255,255,0.03)",borderRadius:7,padding:"9px 11px"}}>
+                  <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",marginBottom:3}}>Website</div>
+                  <a href={c.website} target="_blank" rel="noreferrer" style={{fontSize:13,fontWeight:700,color:GOLD,fontFamily:"Syne,sans-serif",textDecoration:"none"}}>{c.website.replace(/https?:\/\//,"").replace(/\/$/,"")}</a>
+                </div>
+              )}
               <Stat label="Exchange" value={c.exchange||"—"} sub={c.country}/>
             </div>
           </div>
@@ -1089,10 +1114,13 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
                 >
                   {convGenLoading ? "GENERATING..." : "✦ GENERATE AI NARRATIVE"}
                 </button>
-                {conv.ai_generated && (
+                {conv.ai_generated && !convGenError && (
                   <span style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>
                     AI draft · {conv.ai_generated_at ? new Date(conv.ai_generated_at).toLocaleDateString() : ""} · Edit before publishing
                   </span>
+                )}
+                {convGenError && (
+                  <span style={{fontSize:8,color:"#ef4444",fontFamily:"DM Mono,monospace",lineHeight:1.4}}>{convGenError}</span>
                 )}
               </div>
               {[
@@ -1150,40 +1178,48 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             )}
           </div>
         )}
-        {tab==="performance"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:2}}>
-              PERFORMANCE COMPARISON — {c.ticker} vs S&P 500 vs SECTOR
-            </div>
-            <div style={{borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
-              <iframe
-                key={`perf-${c.ticker}`}
-                src={`https://s.tradingview.com/widgetembed/?symbol=${c.exchange}:${c.ticker}&interval=W&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=111120&theme=dark&style=1&timezone=exchange&withdateranges=1&showpopupbutton=0&locale=en&studies=[]&hidevolume=1&compareSymbols=${encodeURIComponent(JSON.stringify([{"symbol":"SP:SPX","lineColor":"#60a5fa"},{"symbol":"AMEX:QQQ","lineColor":"#a78bfa"}]))}`}
-                style={{width:"100%",height:440,border:"none",display:"block"}}
-                allowTransparency={true}
-                title={`${c.ticker} performance comparison`}
-              />
-            </div>
-            <div style={{background:"rgba(255,255,255,0.025)",borderRadius:8,padding:"13px"}}>
-              <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:9}}>BENCHMARKS</div>
-              <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                {[
-                  {label:c.ticker, color:GOLD},
-                  {label:"S&P 500", color:"#60a5fa"},
-                  {label:"NASDAQ 100", color:"#a78bfa"}
-                ].map(b=>(
-                  <div key={b.label} style={{display:"flex",alignItems:"center",gap:6}}>
-                    <div style={{width:10,height:3,borderRadius:2,background:b.color}}/>
-                    <span style={{fontSize:9,color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace"}}>{b.label}</span>
-                  </div>
-                ))}
+        {tab==="performance"&&(()=>{
+          const SECTOR_ETFS={"Technology":"XLK","Information Technology":"XLK","Healthcare":"XLV","Health Care":"XLV","Financial Services":"XLF","Financials":"XLF","Consumer Cyclical":"XLY","Consumer Discretionary":"XLY","Consumer Defensive":"XLP","Consumer Staples":"XLP","Energy":"XLE","Basic Materials":"XLB","Materials":"XLB","Utilities":"XLU","Real Estate":"XLRE","Industrials":"XLI","Communication Services":"XLC","Communications":"XLC"};
+          const sectorETF=SECTOR_ETFS[c.sector]||null;
+          const compareSymbols=["SP:SPX","AMEX:QQQ",...(sectorETF?[`AMEX:${sectorETF}`]:[])];
+          const compareParam=compareSymbols.join(",");
+          const benchmarks=[
+            {label:c.ticker,color:GOLD},
+            {label:"S&P 500",color:"#60a5fa"},
+            {label:"NASDAQ 100",color:"#a78bfa"},
+            ...(sectorETF?[{label:`${c.sector||"Sector"} (${sectorETF})`,color:"#34d399"}]:[])
+          ];
+          return (
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:2}}>
+                PERFORMANCE COMPARISON — {c.ticker} vs S&P 500 vs NASDAQ 100{sectorETF?` vs ${sectorETF}`:""}
+              </div>
+              <div style={{borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
+                <iframe
+                  key={`perf-${c.ticker}-${sectorETF||"nosec"}`}
+                  src={`https://s.tradingview.com/widgetembed/?symbol=${c.exchange}:${c.ticker}&interval=W&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=111120&theme=dark&style=2&timezone=exchange&withdateranges=1&showpopupbutton=0&locale=en&compare=${encodeURIComponent(compareParam)}`}
+                  style={{width:"100%",height:460,border:"none",display:"block"}}
+                  allowTransparency={true}
+                  title={`${c.ticker} performance comparison`}
+                />
+              </div>
+              <div style={{background:"rgba(255,255,255,0.025)",borderRadius:8,padding:"13px"}}>
+                <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:9}}>BENCHMARKS</div>
+                <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
+                  {benchmarks.map(b=>(
+                    <div key={b.label} style={{display:"flex",alignItems:"center",gap:6}}>
+                      <div style={{width:10,height:3,borderRadius:2,background:b.color}}/>
+                      <span style={{fontSize:9,color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace"}}>{b.label}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div style={{fontSize:9,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>
+                Powered by TradingView · Weekly line chart · Style 2 (Line) for clear comparison · Aramis Capital internal use only
               </div>
             </div>
-            <div style={{fontSize:9,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>
-              Powered by TradingView · Weekly chart · Aramis Capital internal use only
-            </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );
@@ -1837,12 +1873,12 @@ function Platform({ user, permissions, onLogout }) {
                     {[
                       {l:"P/E",v:dc.pe?`${dc.pe}x`:"—"},
                       {l:"EV/EBITDA",v:dc.evEbitda?`${dc.evEbitda}x`:"—"},
-                      {l:"Op. Margin",v:dc.operatingMargin?`${dc.operatingMargin}%`:"—"},
-                      {l:"Net Margin",v:dc.netMargin?`${dc.netMargin}%`:"—"},
+                      {l:"Op. Margin",v:dc.opMargin!=null?`${dc.opMargin}%`:"—"},
+                      {l:"Net Margin",v:dc.netMargin!=null?`${dc.netMargin}%`:"—"},
                       {l:"ROIC",v:dc.roic?`${dc.roic}%`:"—"},
-                      {l:"Market Cap",v:dc.marketCap?`$${(dc.marketCap/1e9).toFixed(1)}B`:"—"},
-                      {l:"Revenue TTM",v:dc.revenue?`$${(dc.revenue/1e9).toFixed(1)}B`:"—"},
-                      {l:"FCF Yield",v:dc.fcfYield?`${dc.fcfYield}%`:"—"}
+                      {l:"Market Cap",v:dc.mktCap||"—"},
+                      {l:"Revenue TTM",v:dc.revenue||"—"},
+                      {l:"FCF Yield",v:dc.fcfYield!=null?`${dc.fcfYield}%`:"—"}
                     ].map(s=>(
                       <div key={s.l} style={{background:"rgba(255,255,255,0.03)",borderRadius:7,padding:"8px 10px"}}>
                         <div style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",marginBottom:3}}>{s.l}</div>
@@ -1917,14 +1953,20 @@ function Platform({ user, permissions, onLogout }) {
         </div>
       )}
       {view==="models" && (()=>{
-        const MODEL_DEFS = [
-          {id:"tier1_concentrated",name:"Tier 1 Concentrated",desc:"15–20 highest conviction Tier 1 names. Long-term hold orientation.",filter:u=>u.riskTier===1,weight:"equal_weight"},
-          {id:"quality_growth",name:"Global Quality Growth",desc:"Top companies by Aramis score, diversified by sector.",filter:u=>true,weight:"score_weighted",limit:10},
-          {id:"income_dividend",name:"Income & Dividend",desc:"Yield-focused names with dividend history.",filter:u=>u.dividends&&u.dividends.length>0,weight:"equal_weight"}
+        const PRESET_MODELS = [
+          {id:"tier1_concentrated",name:"Tier 1 Concentrated",desc:"Highest conviction Tier 1 names. Long-term hold orientation.",filter:u=>u.riskTier===1,weight:"equal_weight"},
+          {id:"quality_growth",name:"Global Quality Growth",desc:"Top 10 companies by Aramis score, diversified by sector.",filter:u=>true,weight:"score_weighted",limit:10},
+          {id:"income_dividend",name:"Income & Dividend",desc:"Yield-focused names with dividend history.",filter:u=>u.dividends&&u.dividends.length>0,weight:"equal_weight"},
+          {id:"custom",name:"Custom Model",desc:"Build your own model portfolio from the universe.",filter:u=>false,weight:"equal_weight",custom:true}
         ];
-        const mdl = MODEL_DEFS.find(m=>m.id===modelTab)||MODEL_DEFS[0];
-        let holdings = universe.filter(mdl.filter);
-        if(mdl.limit){
+        const isCustom = modelTab==="custom";
+        const mdl = PRESET_MODELS.find(m=>m.id===modelTab)||PRESET_MODELS[0];
+        const customTickers = (() => { try { return JSON.parse(localStorage.getItem("aramis_custom_model")||"[]"); } catch { return []; } })();
+        const saveCustomTickers = (tks) => { try { localStorage.setItem("aramis_custom_model", JSON.stringify(tks)); } catch {} };
+        let holdings = isCustom
+          ? universe.filter(u=>customTickers.includes(u.ticker))
+          : universe.filter(mdl.filter);
+        if(!isCustom && mdl.limit){
           const scored=[...holdings].map(c=>({...c,_score:calcAramisScore(c)?.total||0}));
           scored.sort((a,b)=>b._score-a._score);
           holdings=scored.slice(0,mdl.limit);
@@ -1932,76 +1974,123 @@ function Platform({ user, permissions, onLogout }) {
         const scores=holdings.map(c=>({c,s:calcAramisScore(c)?.total||0}));
         const totalScore=scores.reduce((a,b)=>a+b.s,0)||1;
         const snap=modelSnapshots[mdl.id];
+        const snapDaysAgo = snap ? Math.round((Date.now()-new Date(snap.date))/86400000) : null;
+        const periodLabel = snapDaysAgo===null ? null : snapDaysAgo<=35?"~30D":snapDaysAgo<=100?"~90D":snapDaysAgo<=200?"~180D":snapDaysAgo<=400?"~1YR":"Long-term";
+        const ytdStart = new Date(new Date().getFullYear(),0,1).toISOString();
         const trackModel=()=>{
           const snapshot={date:new Date().toISOString(),holdings:holdings.map(c=>({ticker:c.ticker,price:c.price,weight:mdl.weight==="score_weighted"?(calcAramisScore(c)?.total||0)/totalScore:1/holdings.length}))};
           setModelSnapshots(prev=>{const u={...prev,[mdl.id]:snapshot};try{localStorage.setItem(`aramis_model_snapshot_${mdl.id}`,JSON.stringify(snapshot));}catch{}return u;});
         };
         const SECTOR_COLORS=["#60a5fa","#a78bfa","#34d399","#f59e0b","#f87171","#818cf8","#fb923c","#4ade80"];
         const sectors=[...new Set(holdings.map(c=>c.sector).filter(Boolean))];
+        const weightedAvgScore = holdings.length ? Math.round(scores.reduce((a,b)=>a+b.s,0)/holdings.length) : 0;
         return (
           <div style={{flex:1,overflow:"auto",padding:16}}>
             <div style={{marginBottom:14,display:"flex",alignItems:"center",gap:10}}>
               <div style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif"}}>Portfolio Models</div>
-              <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace"}}>Reference frameworks — not execution tools</div>
+              <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace"}}>Signal frameworks — not execution tools</div>
             </div>
-            <div style={{display:"flex",gap:6,marginBottom:16}}>
-              {MODEL_DEFS.map(m=>(
+            {/* Model tabs */}
+            <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
+              {PRESET_MODELS.map(m=>(
                 <button key={m.id} onClick={()=>setModelTab(m.id)} style={{fontSize:9,padding:"5px 12px",borderRadius:6,border:`1px solid ${modelTab===m.id?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.08)"}`,background:modelTab===m.id?"rgba(201,168,76,0.08)":"transparent",color:modelTab===m.id?GOLD:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>{m.name}</button>
               ))}
             </div>
+            {/* Model header */}
             <div style={{background:"rgba(201,168,76,0.04)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(201,168,76,0.12)",marginBottom:14}}>
-              <div style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif",marginBottom:4}}>{mdl.name}</div>
-              <div style={{fontSize:9,color:"rgba(255,255,255,0.4)",fontFamily:"DM Sans,sans-serif",lineHeight:1.5}}>{mdl.desc}</div>
-              {snap&&<div style={{marginTop:8,fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace"}}>Tracked since {new Date(snap.date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})} · Benchmark comparison requires FMP paid tier</div>}
-              <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
-                <button onClick={trackModel} style={{fontSize:9,padding:"5px 12px",borderRadius:5,border:"1px solid rgba(201,168,76,0.3)",background:"rgba(201,168,76,0.08)",color:GOLD,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>{snap?"Re-snapshot Model":"Track This Model"}</button>
-              </div>
-            </div>
-            {/* Sector composition */}
-            <div style={{background:"rgba(255,255,255,0.025)",borderRadius:10,padding:"12px 14px",border:"1px solid rgba(255,255,255,0.06)",marginBottom:14}}>
-              <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:8}}>SECTOR COMPOSITION</div>
-              <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                {sectors.map((sec,i)=>{const cnt=holdings.filter(c=>c.sector===sec).length;return(
-                  <div key={sec} style={{display:"flex",alignItems:"center",gap:5}}>
-                    <div style={{width:8,height:8,borderRadius:"50%",background:SECTOR_COLORS[i%SECTOR_COLORS.length]}}/>
-                    <span style={{fontSize:9,color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace"}}>{sec} ({cnt})</span>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                <div style={{flex:1}}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#fff",fontFamily:"Syne,sans-serif",marginBottom:4}}>{mdl.name}</div>
+                  <div style={{fontSize:9,color:"rgba(255,255,255,0.4)",fontFamily:"DM Sans,sans-serif",lineHeight:1.5,marginBottom:8}}>{mdl.desc}</div>
+                  <div style={{display:"flex",gap:14,flexWrap:"wrap"}}>
+                    <span style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace"}}>{holdings.length} holdings</span>
+                    {weightedAvgScore>0&&<span style={{fontSize:8,color:GOLD,fontFamily:"DM Mono,monospace"}}>Avg Aramis Score: {weightedAvgScore}/100</span>}
+                    {snap&&<span style={{fontSize:8,color:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace"}}>Tracked {snapDaysAgo}d ago ({periodLabel}) · {new Date(snap.date).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})}</span>}
                   </div>
-                );})}
+                </div>
+                <div style={{display:"flex",gap:6,flexShrink:0,marginLeft:12}}>
+                  <button onClick={trackModel} style={{fontSize:9,padding:"5px 12px",borderRadius:5,border:"1px solid rgba(201,168,76,0.3)",background:"rgba(201,168,76,0.08)",color:GOLD,fontFamily:"DM Mono,monospace",cursor:"pointer"}}>{snap?"Re-snapshot":"Track Model"}</button>
+                </div>
               </div>
             </div>
+            {/* Custom model builder */}
+            {isCustom && (
+              <div style={{background:"rgba(255,255,255,0.025)",borderRadius:10,padding:"14px 16px",border:"1px solid rgba(255,255,255,0.07)",marginBottom:14}}>
+                <div style={{fontSize:8,color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",marginBottom:10,letterSpacing:"0.08em"}}>BUILD YOUR MODEL — SELECT COMPANIES</div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:10}}>
+                  {universe.map(u=>{
+                    const active=customTickers.includes(u.ticker);
+                    const sc=calcAramisScore(u)?.total||0;
+                    return (
+                      <button key={u.ticker} onClick={()=>{
+                        const nxt=active?customTickers.filter(t=>t!==u.ticker):[...customTickers,u.ticker];
+                        saveCustomTickers(nxt);
+                        setModelSnapshots(p=>({...p})); // force re-render
+                      }} style={{fontSize:8,padding:"3px 8px",borderRadius:5,border:`1px solid ${active?"rgba(201,168,76,0.4)":"rgba(255,255,255,0.07)"}`,background:active?"rgba(201,168,76,0.08)":"transparent",color:active?GOLD:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>
+                        {u.ticker}{sc>0?` (${sc})`:""}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                  <span style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>{customTickers.length} selected · Equal weighted</span>
+                  {customTickers.length>0&&<button onClick={()=>{saveCustomTickers([]);setModelSnapshots(p=>({...p}));}} style={{fontSize:8,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(239,68,68,0.3)",background:"transparent",color:"#ef4444",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>Clear all</button>}
+                </div>
+              </div>
+            )}
+            {/* Sector composition */}
+            {sectors.length>0&&(
+              <div style={{background:"rgba(255,255,255,0.025)",borderRadius:10,padding:"12px 14px",border:"1px solid rgba(255,255,255,0.06)",marginBottom:14}}>
+                <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:8}}>SECTOR COMPOSITION</div>
+                <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                  {sectors.map((sec,i)=>{const cnt=holdings.filter(c=>c.sector===sec).length;return(
+                    <div key={sec} style={{display:"flex",alignItems:"center",gap:5}}>
+                      <div style={{width:8,height:8,borderRadius:"50%",background:SECTOR_COLORS[i%SECTOR_COLORS.length]}}/>
+                      <span style={{fontSize:9,color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace"}}>{sec} ({cnt})</span>
+                    </div>
+                  );})}
+                </div>
+              </div>
+            )}
             {/* Holdings table */}
             <div style={{overflowX:"auto"}}>
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"DM Mono,monospace"}}>
                 <thead>
                   <tr style={{borderBottom:"1px solid rgba(255,255,255,0.07)"}}>
-                    {["Ticker","Name","Price","Aramis Score","Weight","7D Return","Entry"].map(h=>(
-                      <th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:8,color:"rgba(255,255,255,0.3)",fontWeight:600}}>{h}</th>
+                    {["Ticker","Name","Price","Score","Weight %",snap?"Return Since Tracked":"Return","Op Margin","ROIC","Action"].map(h=>(
+                      <th key={h} style={{padding:"6px 10px",textAlign:"left",fontSize:8,color:"rgba(255,255,255,0.3)",fontWeight:600,whiteSpace:"nowrap"}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {holdings.map(hc=>{
                     const sc=calcAramisScore(hc)?.total||0;
-                    const wt=mdl.weight==="score_weighted"?((sc/totalScore)*100).toFixed(1):(100/holdings.length).toFixed(1);
+                    const wt=mdl.weight==="score_weighted"?((sc/totalScore)*100).toFixed(1):(100/(holdings.length||1)).toFixed(1);
                     const snapEntry=snap?.holdings?.find(h=>h.ticker===hc.ticker);
                     const ret=snapEntry&&snapEntry.price&&hc.price?((hc.price-snapEntry.price)/snapEntry.price*100).toFixed(1):null;
+                    const retN=ret!==null?parseFloat(ret):null;
                     return (
                       <tr key={hc.ticker} style={{borderBottom:"1px solid rgba(255,255,255,0.04)",cursor:"pointer"}} onClick={()=>{setSelected(hc);setView("cards");}}>
                         <td style={{padding:"8px 10px",color:GOLD,fontWeight:700}}>{hc.ticker}</td>
-                        <td style={{padding:"8px 10px",color:"rgba(255,255,255,0.6)",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{hc.name}</td>
+                        <td style={{padding:"8px 10px",color:"rgba(255,255,255,0.6)",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{hc.name}</td>
                         <td style={{padding:"8px 10px",color:"#fff"}}>{hc.price?`$${hc.price.toLocaleString()}`:"—"}</td>
-                        <td style={{padding:"8px 10px",color:sc>=70?"#22c55e":sc>=50?GOLD:"#ef4444",fontWeight:700}}>{sc}</td>
+                        <td style={{padding:"8px 10px",color:sc>=70?"#22c55e":sc>=50?GOLD:"#ef4444",fontWeight:700}}>{sc||"—"}</td>
                         <td style={{padding:"8px 10px",color:"rgba(255,255,255,0.5)"}}>{wt}%</td>
-                        <td style={{padding:"8px 10px",color:ret!==null?(parseFloat(ret)>=0?"#22c55e":"#ef4444"):"rgba(255,255,255,0.3)"}}>{ret!==null?`${ret>=0?"+":""}${ret}%`:"—"}</td>
+                        <td style={{padding:"8px 10px",color:retN!==null?(retN>=0?"#22c55e":"#ef4444"):"rgba(255,255,255,0.25)",fontWeight:retN!==null?600:400}}>
+                          {retN!==null?`${retN>=0?"+":""}${ret}%`:"—"}
+                          {retN!==null&&snapEntry?.price&&<div style={{fontSize:7,color:"rgba(255,255,255,0.2)",marginTop:1}}>Entry ${snapEntry.price}</div>}
+                        </td>
+                        <td style={{padding:"8px 10px",color:hc.opMargin>20?"#22c55e":hc.opMargin>10?GOLD:"rgba(255,255,255,0.4)"}}>{hc.opMargin!=null?`${hc.opMargin}%`:"—"}</td>
+                        <td style={{padding:"8px 10px",color:hc.roic>15?"#22c55e":hc.roic>8?GOLD:"rgba(255,255,255,0.4)"}}>{hc.roic?`${hc.roic}%`:"—"}</td>
                         <td style={{padding:"8px 10px"}}>
-                          <button onClick={e=>{e.stopPropagation();const d={...watchlistData[hc.ticker]||{},lane:"HOLD"};setWatchlistEntry(hc.ticker,d);}} style={{fontSize:8,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>Add to WL</button>
+                          <button onClick={e=>{e.stopPropagation();const d={...watchlistData[hc.ticker]||{},lane:"HOLD"};setWatchlistEntry(hc.ticker,d);}} style={{fontSize:8,padding:"3px 8px",borderRadius:4,border:"1px solid rgba(96,165,250,0.3)",background:"rgba(96,165,250,0.08)",color:"#60a5fa",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>+ WL</button>
                         </td>
                       </tr>
                     );
                   })}
                 </tbody>
               </table>
-              {holdings.length===0&&<div style={{textAlign:"center",padding:"40px",color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace",fontSize:10}}>No companies match this model's criteria.</div>}
+              {holdings.length===0&&<div style={{textAlign:"center",padding:"40px",color:"rgba(255,255,255,0.2)",fontFamily:"DM Mono,monospace",fontSize:10}}>{isCustom?"No companies selected yet. Use the builder above to add companies.":"No companies match this model's criteria."}</div>}
             </div>
           </div>
         );
