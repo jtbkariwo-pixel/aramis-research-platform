@@ -424,6 +424,55 @@ function CompanyCard({ c, onClick, selected, loading: cardLoading, watchlistStat
 }
 
 // Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂ DETAIL PANEL Ã¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂÃ¢ÂÂ
+function PerfChart({ticker, exchange, sectorETF}) {
+  const divRef = useRef(null);
+  useEffect(() => {
+    if (!divRef.current) return;
+    const containerId = `tv-perf-${ticker}-${Math.random().toString(36).slice(2,8)}`;
+    divRef.current.id = containerId;
+    divRef.current.innerHTML = '';
+    const compareSymbols = [
+      {symbol:"SP:SPX",position:"SameScale"},
+      {symbol:"AMEX:QQQ",position:"SameScale"},
+      ...(sectorETF?[{symbol:`AMEX:${sectorETF}`,position:"SameScale"}]:[])
+    ];
+    const createWidget = () => {
+      if (!window.TradingView || !divRef.current) return;
+      new window.TradingView.widget({
+        container_id: containerId,
+        autosize: true,
+        symbol: `${exchange}:${ticker}`,
+        interval: "W",
+        timezone: "exchange",
+        theme: "dark",
+        style: "2",
+        locale: "en",
+        toolbar_bg: "#111120",
+        enable_publishing: false,
+        allow_symbol_change: false,
+        withdateranges: true,
+        compare_symbols: compareSymbols
+      });
+    };
+    if (window.TradingView) {
+      createWidget();
+    } else {
+      let script = document.getElementById('tv-widget-script');
+      if (!script) {
+        script = document.createElement('script');
+        script.id = 'tv-widget-script';
+        script.src = 'https://s.tradingview.com/tv.js';
+        script.async = true;
+        document.head.appendChild(script);
+      }
+      const poll = setInterval(() => { if (window.TradingView) { clearInterval(poll); createWidget(); } }, 150);
+      return () => clearInterval(poll);
+    }
+    return () => { if (divRef.current) divRef.current.innerHTML = ''; };
+  }, [ticker, exchange, sectorETF]);
+  return <div ref={divRef} style={{width:"100%",height:460}} />;
+}
+
 function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, analystNote, onNote, complianceNote, onCompliance, watchlistEntry, onWatchlistEntry, conviction, onConviction, activityLogs, onLogActivity, universe }) {
   const [tab,setTab]=useState("overview");
   const isInternal = permissions?.canEdit === true;
@@ -447,33 +496,29 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const generateConviction = async () => {
     setConvGenLoading(true);
     setConvGenError("");
-    const apiKey = (typeof import.meta !== "undefined" && import.meta?.env?.VITE_OPENAI_API_KEY) || "";
+    const apiKey = (typeof import.meta !== "undefined" && import.meta?.env?.VITE_GEMINI_API_KEY) || "";
     if (!apiKey) {
-      setConvGenError("API key not configured. Add VITE_OPENAI_API_KEY in Vercel → Settings → Environment Variables, then redeploy.");
+      setConvGenError("API key not configured. Add VITE_GEMINI_API_KEY in Vercel → Settings → Environment Variables, then redeploy.");
       setConvGenLoading(false);
       return;
     }
     try {
       const scoreData = calcAramisScore(c);
       const prompt = `You are a senior research analyst at Aramis Capital, a Zimbabwean-based institutional investment firm.\n\nWrite a structured investment conviction narrative for ${c.name} (${c.ticker}) using the following data:\n- Current Price: $${c.price}\n- P/E Ratio: ${c.pe ? c.pe + 'x' : 'N/A'}\n- Operating Margin: ${c.opMargin != null ? c.opMargin + '%' : 'N/A'}\n- Revenue Growth: ${c.revenueGrowth ? c.revenueGrowth + '%' : 'N/A'}\n- ROIC: ${c.roic ? c.roic + '%' : 'N/A'}\n- Aramis Score: ${scoreData ? scoreData.total + '/100' : 'N/A'}\n- Tier: ${c.riskTier ? 'Tier ' + c.riskTier : 'Unclassified'}\n- Sector: ${c.sector || 'Unknown'}\n- Market Cap: ${c.mktCap || 'N/A'}\n\nYour response must be a JSON object with exactly these keys:\n{\n  "headline": "Single sentence capturing the core investment thesis (max 20 words)",\n  "why_now": "1-2 sentences on what makes this the right moment to own this stock",\n  "business_moat": "1-2 sentences on the competitive advantage and business quality",\n  "financial_health": "1 sentence on balance sheet and cash generation strength",\n  "growth_trajectory": "1 sentence on the growth profile",\n  "management_quality": "1 sentence on capital allocation track record",\n  "valuation": "1 sentence on whether the stock is cheap, fair, or expensive",\n  "key_risks": "1-2 sentences on the primary risks to the thesis",\n  "client_summary": "3 sentences in plain English suitable for a sophisticated private investor"\n}\n\nTone: institutional and measured. Return only the JSON object, no other text.`;
-      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${apiKey}`
-        },
+        headers: {"Content-Type": "application/json"},
         body: JSON.stringify({
-          model: "gpt-4o-mini",
-          max_tokens: 1200,
-          messages: [{ role: "user", content: prompt }]
+          contents: [{parts: [{text: prompt}]}],
+          generationConfig: {maxOutputTokens: 1200, temperature: 0.7}
         })
       });
       const data = await response.json();
       if (!response.ok) {
-        setConvGenError(`OpenAI error ${response.status}: ${data.error?.message || "Unknown error"}`);
+        setConvGenError(`Gemini error ${response.status}: ${data.error?.message || "Unknown error"}`);
         return;
       }
-      const text = data.choices?.[0]?.message?.content || "";
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || "";
       const clean = text.replace(/```json|```/g, "").trim();
       const parsed = JSON.parse(clean);
       const aiConv = {
@@ -1177,8 +1222,6 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
         {tab==="performance"&&(()=>{
           const SECTOR_ETFS={"Technology":"XLK","Information Technology":"XLK","Healthcare":"XLV","Health Care":"XLV","Financial Services":"XLF","Financials":"XLF","Consumer Cyclical":"XLY","Consumer Discretionary":"XLY","Consumer Defensive":"XLP","Consumer Staples":"XLP","Energy":"XLE","Basic Materials":"XLB","Materials":"XLB","Utilities":"XLU","Real Estate":"XLRE","Industrials":"XLI","Communication Services":"XLC","Communications":"XLC"};
           const sectorETF=SECTOR_ETFS[c.sector]||null;
-          const compareSymbols=["SP:SPX","AMEX:QQQ",...(sectorETF?[`AMEX:${sectorETF}`]:[])];
-          const compareParam=compareSymbols.join(",");
           const benchmarks=[
             {label:c.ticker,color:GOLD},
             {label:"S&P 500",color:"#60a5fa"},
@@ -1191,13 +1234,7 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
                 PERFORMANCE COMPARISON — {c.ticker} vs S&P 500 vs NASDAQ 100{sectorETF?` vs ${sectorETF}`:""}
               </div>
               <div style={{borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
-                <iframe
-                  key={`perf-${c.ticker}-${sectorETF||"nosec"}`}
-                  src={`https://s.tradingview.com/widgetembed/?symbol=${c.exchange}:${c.ticker}&interval=W&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=111120&theme=dark&style=2&timezone=exchange&withdateranges=1&showpopupbutton=0&locale=en&compare=${encodeURIComponent(compareParam)}`}
-                  style={{width:"100%",height:460,border:"none",display:"block"}}
-                  allowTransparency={true}
-                  title={`${c.ticker} performance comparison`}
-                />
+                <PerfChart ticker={c.ticker} exchange={c.exchange} sectorETF={sectorETF} />
               </div>
               <div style={{background:"rgba(255,255,255,0.025)",borderRadius:8,padding:"13px"}}>
                 <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:9}}>BENCHMARKS</div>
@@ -1211,7 +1248,7 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
                 </div>
               </div>
               <div style={{fontSize:9,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>
-                Powered by TradingView · Weekly line chart · Style 2 (Line) for clear comparison · Aramis Capital internal use only
+                Powered by TradingView · Weekly line chart · Aramis Capital internal use only
               </div>
             </div>
           );
