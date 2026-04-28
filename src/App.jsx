@@ -238,21 +238,25 @@ async function fetchEarnings(ticker) {
   return Array.isArray(data) ? data : [];
 }
 
+function withTimeout(promise, ms) {
+  return Promise.race([promise, new Promise((_, rej) => setTimeout(() => rej(new Error("FMP_TIMEOUT")), ms))]);
+}
+
 async function loadCompanyData(ticker) {
   try {
     const [profile, metrics, ratios, income, balance, cashflow, quote, dcf, estimates, news, dividends, earnings] = await Promise.allSettled([
-      fetchProfile(ticker),
-      fetchKeyMetrics(ticker),
-      fetchRatios(ticker),
-      fetchIncome(ticker),
-      fetchBalanceSheet(ticker),
-      fetchCashFlow(ticker),
-      fetchQuote(ticker),
-      fetchDCF(ticker),
-      fetchEstimates(ticker),
-      fetchNews(ticker),
-      fetchDividends(ticker),
-      fetchEarnings(ticker),
+      withTimeout(fetchProfile(ticker), 8000),
+      withTimeout(fetchKeyMetrics(ticker), 8000),
+      withTimeout(fetchRatios(ticker), 8000),
+      withTimeout(fetchIncome(ticker), 8000),
+      withTimeout(fetchBalanceSheet(ticker), 8000),
+      withTimeout(fetchCashFlow(ticker), 8000),
+      withTimeout(fetchQuote(ticker), 8000),
+      withTimeout(fetchDCF(ticker), 8000),
+      withTimeout(fetchEstimates(ticker), 8000),
+      withTimeout(fetchNews(ticker), 8000),
+      withTimeout(fetchDividends(ticker), 8000),
+      withTimeout(fetchEarnings(ticker), 8000),
     ]);
     return {
       profile:   profile.status   === "fulfilled" ? profile.value   : null,
@@ -558,7 +562,10 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
   const [convSaved, setConvSaved] = useState(false);
   const convSaveTimer = useRef(null);
   const [convGenLoading, setConvGenLoading] = useState(false);
+  const [convGenError, setConvGenError] = useState("");
+  const autoGenAttempted = useRef({});
   const [showClientView, setShowClientView] = useState(false);
+  const [perfRange, setPerfRange] = useState("12M");
   const [chartInterval, setChartInterval] = useState("D");
   const [showCompare, setShowCompare] = useState(false);
   const [compareWith, setCompareWith] = useState([]);
@@ -1257,40 +1264,37 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             )}
           </div>
         )}
-        {tab==="performance"&&(
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:2}}>
-              PERFORMANCE COMPARISON — {c.ticker} vs S&P 500 vs SECTOR
-            </div>
-            <div style={{borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
-              <iframe
-                key={`perf-${c.ticker}`}
-                src={`https://s.tradingview.com/widgetembed/?symbol=${c.exchange}:${c.ticker}&interval=W&hidesidetoolbar=1&symboledit=0&saveimage=0&toolbarbg=111120&theme=dark&style=1&timezone=exchange&withdateranges=1&showpopupbutton=0&locale=en&studies=[]&hidevolume=1&compareSymbols=${encodeURIComponent(JSON.stringify([{"symbol":"SP:SPX","lineColor":"#60a5fa"},{"symbol":"AMEX:QQQ","lineColor":"#a78bfa"}]))}`}
-                style={{width:"100%",height:440,border:"none",display:"block"}}
-                allowTransparency={true}
-                title={`${c.ticker} performance comparison`}
-              />
-            </div>
-            <div style={{background:"rgba(255,255,255,0.025)",borderRadius:8,padding:"13px"}}>
-              <div style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",marginBottom:9}}>BENCHMARKS</div>
-              <div style={{display:"flex",gap:12,flexWrap:"wrap"}}>
-                {[
-                  {label:c.ticker, color:GOLD},
-                  {label:"S&P 500", color:"#60a5fa"},
-                  {label:"NASDAQ 100", color:"#a78bfa"}
-                ].map(b=>(
+        {tab==="performance"&&(()=>{
+          const perfInterval = ({"1M":"D","3M":"D","6M":"W","12M":"W","3Y":"W","5Y":"M"})[perfRange]||"W";
+          const sectorEtfSym = c.sectorETF?`AMEX:${c.sectorETF}`:null;
+          const compareSyms = [{symbol:"AMEX:SPY",position:"SameScale"},{symbol:"NASDAQ:QQQ",position:"SameScale"},...(sectorEtfSym?[{symbol:sectorEtfSym,position:"SameScale"}]:[])];
+          const widgetCfg = JSON.stringify({autosize:true,symbol:`${c.exchange}:${c.ticker}`,interval:perfInterval,range:perfRange,timezone:"Etc/UTC",theme:"dark",style:"2",locale:"en",compare_symbols:compareSyms,hide_top_toolbar:false,hide_side_toolbar:true,allow_symbol_change:false,backgroundColor:"rgba(9,9,18,1)",gridColor:"rgba(255,255,255,0.04)"});
+          const srcDoc = "<!DOCTYPE html><html><head><style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#090912;height:100%;overflow:hidden}</style></head><body><div class='tradingview-widget-container' style='height:100%;width:100%'><div class='tradingview-widget-container__widget' style='height:100%;width:100%'></div><script type='text/javascript' src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'>"+widgetCfg+"<\/script></div></body></html>";
+          return (
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}>
+                <span style={{fontSize:8,color:"rgba(255,255,255,0.22)",fontFamily:"DM Mono,monospace",letterSpacing:"0.06em"}}>PERFORMANCE COMPARISON</span>
+                <div style={{display:"flex",alignItems:"center",gap:4}}>
+                  {["1M","3M","6M","12M","3Y","5Y"].map(r=>(
+                    <button key={r} onClick={()=>setPerfRange(r)} style={{fontSize:8,padding:"3px 9px",borderRadius:4,border:`1px solid ${perfRange===r?GOLD:"rgba(255,255,255,0.1)"}`,background:perfRange===r?"rgba(201,168,76,0.12)":"transparent",color:perfRange===r?GOLD:"rgba(255,255,255,0.35)",fontFamily:"DM Mono,monospace",cursor:"pointer",letterSpacing:"0.04em"}}>{r}</button>
+                  ))}
+                </div>
+              </div>
+              <div style={{borderRadius:8,overflow:"hidden",border:"1px solid rgba(255,255,255,0.08)"}}>
+                <iframe key={`perf-${c.ticker}-${perfRange}`} srcDoc={srcDoc} sandbox="allow-scripts allow-same-origin" style={{width:"100%",height:460,border:"none",display:"block"}} title={`${c.ticker} vs benchmarks`}/>
+              </div>
+              <div style={{display:"flex",gap:16,flexWrap:"wrap",padding:"2px 0"}}>
+                {[{label:c.ticker,color:GOLD},{label:"S&P 500 (SPY)",color:"#60a5fa"},{label:"Nasdaq 100 (QQQ)",color:"#a78bfa"},...(sectorEtfSym?[{label:`${c.sectorETF} ETF`,color:"#34d399"}]:[])].map(b=>(
                   <div key={b.label} style={{display:"flex",alignItems:"center",gap:6}}>
-                    <div style={{width:10,height:3,borderRadius:2,background:b.color}}/>
+                    <div style={{width:12,height:3,borderRadius:2,background:b.color}}/>
                     <span style={{fontSize:9,color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace"}}>{b.label}</span>
                   </div>
                 ))}
               </div>
+              <div style={{fontSize:7,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>Single combined chart · All instruments normalized · Powered by TradingView</div>
             </div>
-            <div style={{fontSize:9,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>
-              Powered by TradingView · Weekly chart · Aramis Capital internal use only
-            </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );
@@ -1672,18 +1676,38 @@ function Platform({ user, permissions, onLogout }) {
             continue;
           }
           const raw = await loadCompanyData(seed.ticker);
-          if (!raw || !raw.profile) {
-            setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false, dataUnavailable:true} : c));
-            continue;
+          if (raw?.profile) {
+            const transformed = transformFMPData(seed.ticker, raw);
+            setUniverse(prev => prev.map(c =>
+              c.ticker === seed.ticker
+                ? { ...transformed, icStatus: seed.icStatus, riskTier: seed.riskTier, theme: seed.theme, loading: false }
+                : c
+            ));
+          } else {
+            // FMP returned no data — try AV as fallback
+            const avRaw = await loadAVCompanyData(seed.ticker);
+            if (avRaw?.overview?.Symbol) {
+              const transformed = transformAVData(seed.ticker, avRaw, seed);
+              setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...transformed, loading:false} : c));
+            } else {
+              setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false, dataUnavailable:true} : c));
+            }
+            await new Promise(r => setTimeout(r, 1400)); // AV spacing after fallback
           }
-          const transformed = transformFMPData(seed.ticker, raw);
-          setUniverse(prev => prev.map(c =>
-            c.ticker === seed.ticker
-              ? { ...transformed, icStatus: seed.icStatus, riskTier: seed.riskTier, theme: seed.theme, loading: false }
-              : c
-          ));
         } catch (e) {
-          setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false} : c));
+          // FMP errored (timeout, rate limit) — try AV fallback
+          try {
+            const avRaw = await loadAVCompanyData(seed.ticker);
+            if (avRaw?.overview?.Symbol) {
+              const transformed = transformAVData(seed.ticker, avRaw, seed);
+              setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...transformed, loading:false} : c));
+            } else {
+              setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false, dataUnavailable:true} : c));
+            }
+            await new Promise(r => setTimeout(r, 1400));
+          } catch {
+            setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false, dataUnavailable:true} : c));
+          }
         }
         await new Promise(r => setTimeout(r, 400)); // FMP rate limit spacing
       }
