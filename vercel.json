@@ -5,5 +5,11 @@
     "headers": [
       { "key": "X-Content-Type-Options", "value": "nosniff" }
     ]
-  }]
+  }],
+  "functions": {
+    "api/generate-narrative.js": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 30
+    }
+  }
 }

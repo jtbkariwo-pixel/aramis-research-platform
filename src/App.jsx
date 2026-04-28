@@ -1309,10 +1309,35 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
         )}
         {tab==="performance"&&(()=>{
           const perfInterval = ({"1M":"D","3M":"D","6M":"W","12M":"W","3Y":"W","5Y":"M"})[perfRange]||"W";
-          const sectorEtfSym = c.sectorETF?`AMEX:${c.sectorETF}`:null;
-          const compareSyms = [{symbol:"AMEX:SPY",position:"SameScale"},{symbol:"NASDAQ:QQQ",position:"SameScale"},...(sectorEtfSym?[{symbol:sectorEtfSym,position:"SameScale"}]:[])];
-          const widgetCfg = JSON.stringify({autosize:true,symbol:`${c.exchange}:${c.ticker}`,interval:perfInterval,range:perfRange,timezone:"Etc/UTC",theme:"dark",style:"2",locale:"en",compare_symbols:compareSyms,hide_top_toolbar:false,hide_side_toolbar:true,allow_symbol_change:false,backgroundColor:"rgba(9,9,18,1)",gridColor:"rgba(255,255,255,0.04)"});
-          const srcDoc = "<!DOCTYPE html><html><head><style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#090912;height:100%;overflow:hidden}</style></head><body><div class='tradingview-widget-container' style='height:100%;width:100%'><div class='tradingview-widget-container__widget' style='height:100%;width:100%'></div><script type='text/javascript' src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'>"+widgetCfg+"<\/script></div></body></html>";
+          const sectorEtfSym = c.sectorETF ? `AMEX:${c.sectorETF}` : null;
+          const compareSyms = JSON.stringify([
+            {symbol:"AMEX:SPY",position:"SameScale"},
+            {symbol:"NASDAQ:QQQ",position:"SameScale"},
+            ...(sectorEtfSym ? [{symbol:sectorEtfSym,position:"SameScale"}] : [])
+          ]);
+          const widgetConfig = JSON.stringify({
+            container_id:"tv_perf",
+            autosize:true,
+            symbol:`${c.exchange}:${c.ticker}`,
+            interval:perfInterval,
+            timezone:"Etc/UTC",
+            theme:"dark",
+            style:"2",
+            locale:"en",
+            compare_symbols:JSON.parse(compareSyms),
+            hide_side_toolbar:true,
+            allow_symbol_change:false,
+            backgroundColor:"rgba(9,9,18,1)"
+          });
+          const srcDoc = [
+            "<!DOCTYPE html><html><head>",
+            "<style>*{margin:0;padding:0}html,body{background:#090912;height:100%;overflow:hidden}#tv_perf{height:100%}</style>",
+            "</head><body>",
+            "<div id='tv_perf'></div>",
+            "<script src='https://s3.tradingview.com/tv.js'></scr" + "ipt>",
+            "<script>new TradingView.widget("+widgetConfig+");</scr" + "ipt>",
+            "</body></html>"
+          ].join("");
           return (
             <div style={{display:"flex",flexDirection:"column",gap:10}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6}}>
@@ -1334,7 +1359,7 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
                   </div>
                 ))}
               </div>
-              <div style={{fontSize:7,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>Single combined chart · All instruments normalized · Powered by TradingView</div>
+              <div style={{fontSize:7,color:"rgba(255,255,255,0.18)",fontFamily:"DM Mono,monospace",textAlign:"center"}}>Single combined chart · Powered by TradingView</div>
             </div>
           );
         })()}
@@ -1727,30 +1752,12 @@ function Platform({ user, permissions, onLogout }) {
                 : c
             ));
           } else {
-            // FMP returned no data — try AV as fallback
-            const avRaw = await loadAVCompanyData(seed.ticker);
-            if (avRaw?.overview?.Symbol) {
-              const transformed = transformAVData(seed.ticker, avRaw, seed);
-              setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...transformed, loading:false} : c));
-            } else {
-              setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false, dataUnavailable:true} : c));
-            }
-            await new Promise(r => setTimeout(r, 1400)); // AV spacing after fallback
+            // FMP returned empty — mark unavailable (preserve AV quota for JSE stocks only)
+            setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false, dataUnavailable:true, fmpLimited:true} : c));
           }
         } catch (e) {
-          // FMP errored (timeout, rate limit) — try AV fallback
-          try {
-            const avRaw = await loadAVCompanyData(seed.ticker);
-            if (avRaw?.overview?.Symbol) {
-              const transformed = transformAVData(seed.ticker, avRaw, seed);
-              setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...transformed, loading:false} : c));
-            } else {
-              setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false, dataUnavailable:true} : c));
-            }
-            await new Promise(r => setTimeout(r, 1400));
-          } catch {
-            setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false, dataUnavailable:true} : c));
-          }
+          // FMP errored or timed out — mark unavailable (preserve AV quota for JSE stocks only)
+          setUniverse(prev => prev.map(c => c.ticker === seed.ticker ? {...c, loading:false, dataUnavailable:true, fmpLimited:true} : c));
         }
         await new Promise(r => setTimeout(r, 400)); // FMP rate limit spacing
       }
