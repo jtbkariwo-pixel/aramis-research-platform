@@ -1327,7 +1327,7 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             interval:perfInterval,
             timezone:"Etc/UTC",
             theme:"dark",
-            style:"1",
+            style:"3",
             locale:"en",
             compareSymbols,
             hide_side_toolbar:false,
