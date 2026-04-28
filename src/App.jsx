@@ -1309,33 +1309,37 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
         )}
         {tab==="performance"&&(()=>{
           const perfInterval = ({"1M":"D","3M":"D","6M":"W","12M":"W","3Y":"W","5Y":"M"})[perfRange]||"W";
-          const sectorEtfSym = c.sectorETF ? `AMEX:${c.sectorETF}` : null;
-          const compareSyms = JSON.stringify([
+          const SECTOR_ETF = {"Technology":"XLK","Financials":"XLF","Energy":"XLE","Healthcare":"XLV","Communication Services":"XLC","Telecoms":"XLC","Industrials":"XLI","Consumer Discretionary":"XLY","Consumer Staples":"XLP","Utilities":"XLU","Materials":"XLB","Real Estate":"XLRE"};
+          const etfTicker = c.sectorETF || SECTOR_ETF[c.sector] || null;
+          const sectorEtfSym = etfTicker ? `AMEX:${etfTicker}` : null;
+          const compareSymbols = [
             {symbol:"AMEX:SPY",position:"SameScale"},
             {symbol:"NASDAQ:QQQ",position:"SameScale"},
             ...(sectorEtfSym ? [{symbol:sectorEtfSym,position:"SameScale"}] : [])
-          ]);
-          const widgetConfig = JSON.stringify({
-            container_id:"tv_perf",
+          ];
+          const widgetJson = JSON.stringify({
             autosize:true,
             symbol:`${c.exchange}:${c.ticker}`,
             interval:perfInterval,
             timezone:"Etc/UTC",
             theme:"dark",
-            style:"2",
+            style:"1",
             locale:"en",
-            compare_symbols:JSON.parse(compareSyms),
+            compareSymbols,
             hide_side_toolbar:true,
             allow_symbol_change:false,
             backgroundColor:"rgba(9,9,18,1)"
           });
           const srcDoc = [
             "<!DOCTYPE html><html><head>",
-            "<style>*{margin:0;padding:0}html,body{background:#090912;height:100%;overflow:hidden}#tv_perf{height:100%}</style>",
+            "<style>*{margin:0;padding:0}html,body{background:#090912;height:100%;overflow:hidden}.tradingview-widget-container,.tradingview-widget-container__widget{height:100%;width:100%}</style>",
             "</head><body>",
-            "<div id='tv_perf'></div>",
-            "<script src='https://s3.tradingview.com/tv.js'></scr" + "ipt>",
-            "<script>new TradingView.widget("+widgetConfig+");</scr" + "ipt>",
+            "<div class='tradingview-widget-container'>",
+            "<div class='tradingview-widget-container__widget'></div>",
+            "<script type='text/javascript' src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js' async>",
+            widgetJson,
+            "</scr"+"ipt>",
+            "</div>",
             "</body></html>"
           ].join("");
           return (
@@ -1352,7 +1356,7 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
                 <iframe key={`perf-${c.ticker}-${perfRange}`} srcDoc={srcDoc} sandbox="allow-scripts allow-same-origin" style={{width:"100%",height:460,border:"none",display:"block"}} title={`${c.ticker} vs benchmarks`}/>
               </div>
               <div style={{display:"flex",gap:16,flexWrap:"wrap",padding:"2px 0"}}>
-                {[{label:c.ticker,color:GOLD},{label:"S&P 500 (SPY)",color:"#60a5fa"},{label:"Nasdaq 100 (QQQ)",color:"#a78bfa"},...(sectorEtfSym?[{label:`${c.sectorETF} ETF`,color:"#34d399"}]:[])].map(b=>(
+                {[{label:c.ticker,color:GOLD},{label:"S&P 500 (SPY)",color:"#60a5fa"},{label:"Nasdaq 100 (QQQ)",color:"#a78bfa"},...(sectorEtfSym?[{label:`${etfTicker} Sector ETF`,color:"#34d399"}]:[])].map(b=>(
                   <div key={b.label} style={{display:"flex",alignItems:"center",gap:6}}>
                     <div style={{width:12,height:3,borderRadius:2,background:b.color}}/>
                     <span style={{fontSize:9,color:"rgba(255,255,255,0.5)",fontFamily:"DM Mono,monospace"}}>{b.label}</span>

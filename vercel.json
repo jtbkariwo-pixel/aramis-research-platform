@@ -8,7 +8,6 @@
   }],
   "functions": {
     "api/generate-narrative.js": {
-      "runtime": "nodejs20.x",
       "maxDuration": 30
     }
   }
