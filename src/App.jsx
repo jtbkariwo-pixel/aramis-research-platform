@@ -1241,16 +1241,20 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
               <div style={{fontSize:9,color:"rgba(255,255,255,0.3)",fontFamily:"DM Sans,sans-serif",marginBottom:12,lineHeight:1.5}}>Write the investment thesis in plain English — for clients, not quants. This is what separates Aramis from data aggregators.</div>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14,paddingBottom:10,borderBottom:"1px solid rgba(255,255,255,0.06)",flexWrap:"wrap"}}>
                 {convGenLoading ? (
-                  <span style={{fontSize:9,color:GOLD,fontFamily:"DM Mono,monospace",letterSpacing:"0.06em"}}>✦ Generating AI narrative...</span>
+                  <span style={{fontSize:9,color:GOLD,fontFamily:"DM Mono,monospace",letterSpacing:"0.06em"}}>✦ Analysing {c.ticker} with Gemini AI...</span>
+                ) : convGenError ? (
+                  <>
+                    <span style={{fontSize:8,color:"#ef4444",fontFamily:"DM Mono,monospace",lineHeight:1.5,flex:"1 1 100%"}}>{convGenError}</span>
+                    <button onClick={generateConviction} style={{fontSize:9,padding:"5px 12px",borderRadius:5,border:"1px solid rgba(239,68,68,0.35)",background:"rgba(239,68,68,0.06)",color:"#ef4444",fontFamily:"DM Mono,monospace",cursor:"pointer"}}>↺ Retry</button>
+                  </>
+                ) : conv.ai_generated ? (
+                  <>
+                    <span style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>✦ AI · {conv.ai_generated_at ? new Date(conv.ai_generated_at).toLocaleDateString() : ""} · Edit before publishing</span>
+                    <button onClick={generateConviction} style={{fontSize:9,padding:"4px 10px",borderRadius:5,border:"1px solid rgba(255,255,255,0.1)",background:"transparent",color:"rgba(255,255,255,0.3)",fontFamily:"DM Mono,monospace",cursor:"pointer",marginLeft:"auto"}}>↺ Regenerate</button>
+                  </>
                 ) : (
-                  <button onClick={generateConviction} style={{fontSize:9,padding:"7px 14px",borderRadius:5,border:"1px solid rgba(201,168,76,0.35)",background:"rgba(201,168,76,0.1)",color:GOLD,fontFamily:"DM Mono,monospace",fontWeight:700,cursor:"pointer",letterSpacing:"0.06em"}}>
-                    {conv.ai_generated ? "↺ REGENERATE" : "✦ GENERATE AI NARRATIVE"}
-                  </button>
+                  <span style={{fontSize:9,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace",letterSpacing:"0.04em"}}>Preparing narrative...</span>
                 )}
-                {conv.ai_generated && !convGenLoading && (
-                  <span style={{fontSize:8,color:"rgba(255,255,255,0.25)",fontFamily:"DM Mono,monospace"}}>AI · {conv.ai_generated_at ? new Date(conv.ai_generated_at).toLocaleDateString() : ""} · Edit before publishing</span>
-                )}
-                {convGenError && <span style={{fontSize:8,color:"#ef4444",fontFamily:"DM Mono,monospace",lineHeight:1.4,flex:"1 1 100%"}}>{convGenError}</span>}
               </div>
               {[
                 {key:"headline",label:"HEADLINE THESIS",placeholder:"Single sentence — the core thesis in plain English",rows:2},
@@ -1313,9 +1317,9 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
           const etfTicker = c.sectorETF || SECTOR_ETF[c.sector] || null;
           const sectorEtfSym = etfTicker ? `AMEX:${etfTicker}` : null;
           const compareSymbols = [
-            {symbol:"AMEX:SPY",position:"SameScale"},
-            {symbol:"NASDAQ:QQQ",position:"SameScale"},
-            ...(sectorEtfSym ? [{symbol:sectorEtfSym,position:"SameScale"}] : [])
+            {symbol:"AMEX:SPY",position:"SameScale",color:"#60a5fa"},
+            {symbol:"NASDAQ:QQQ",position:"SameScale",color:"#a78bfa"},
+            ...(sectorEtfSym ? [{symbol:sectorEtfSym,position:"SameScale",color:"#34d399"}] : [])
           ];
           const widgetJson = JSON.stringify({
             autosize:true,
@@ -1323,12 +1327,18 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
             interval:perfInterval,
             timezone:"Etc/UTC",
             theme:"dark",
-            style:"1",
+            style:"3",
             locale:"en",
             compareSymbols,
-            hide_side_toolbar:true,
+            hide_side_toolbar:false,
             allow_symbol_change:false,
-            backgroundColor:"rgba(9,9,18,1)"
+            backgroundColor:"rgba(9,9,18,1)",
+            overrides:{
+              "mainSeriesProperties.lineStyle.color":"#C9A84C",
+              "mainSeriesProperties.areaStyle.color1":"#C9A84C",
+              "mainSeriesProperties.areaStyle.color2":"#C9A84C22",
+              "mainSeriesProperties.areaStyle.linecolor":"#C9A84C"
+            }
           });
           const srcDoc = [
             "<!DOCTYPE html><html><head>",
