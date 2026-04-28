@@ -6,7 +6,13 @@ module.exports = async function handler(req, res) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
   const apiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: "GEMINI_API_KEY not found in Production environment. In Vercel: Settings → Environment Variables → find GEMINI_API_KEY → click Edit → tick the Production checkbox → Save → Redeploy." });
+  if (!apiKey) {
+    const totalVars = Object.keys(process.env).length;
+    const geminiKeys = Object.keys(process.env).filter(k => k.toLowerCase().includes("gemini") || k.toLowerCase().includes("google"));
+    return res.status(500).json({
+      error: `GEMINI_API_KEY not found. Runtime sees ${totalVars} env vars total. GEMINI/GOOGLE keys visible: ${geminiKeys.length ? geminiKeys.join(", ") : "none"}. Fix: Vercel → Settings → Environment Variables → GEMINI_API_KEY → Edit → tick Production → Save → Redeploy (untick "use existing build cache").`
+    });
+  }
 
   const { name, ticker, price, pe, opMargin, revenueGrowth, roic, score, riskTier, sector, mktCap } = req.body || {};
   if (!ticker) return res.status(400).json({ error: "ticker required" });
