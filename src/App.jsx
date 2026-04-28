@@ -1316,43 +1316,34 @@ function DetailPanel({ c, onClose, permissions, watchlistStatus, onWatchlist, an
           const SECTOR_ETF = {"Technology":"XLK","Financials":"XLF","Energy":"XLE","Healthcare":"XLV","Communication Services":"XLC","Telecoms":"XLC","Industrials":"XLI","Consumer Discretionary":"XLY","Consumer Staples":"XLP","Utilities":"XLU","Materials":"XLB","Real Estate":"XLRE"};
           const etfTicker = c.sectorETF || SECTOR_ETF[c.sector] || null;
           const sectorEtfSym = etfTicker ? `AMEX:${etfTicker}` : null;
-          const compareSyms = [
-            {proName:"AMEX:SPY",    title:"S&P 500"},
-            {proName:"NASDAQ:QQQ",  title:"Nasdaq 100"},
-            ...(sectorEtfSym ? [{proName:sectorEtfSym, title:`${etfTicker} ETF`}] : [])
+          const compareSymbols = [
+            {symbol:"AMEX:SPY",    position:"SameScale"},
+            {symbol:"NASDAQ:QQQ",  position:"SameScale"},
+            ...(sectorEtfSym ? [{symbol:sectorEtfSym, position:"SameScale"}] : [])
           ];
-          const widgetConfig = JSON.stringify({
-            container_id:"tv_perf",
+          const widgetJson = JSON.stringify({
             autosize:true,
             symbol:`${c.exchange}:${c.ticker}`,
             interval:perfInterval,
             timezone:"Etc/UTC",
             theme:"dark",
-            style:"2",
+            style:"1",
             locale:"en",
-            compare_symbols:compareSyms,
+            compareSymbols,
             hide_side_toolbar:false,
             allow_symbol_change:false,
-            backgroundColor:"rgba(9,9,18,1)",
-            overrides:{
-              "mainSeriesProperties.lineStyle.color":"#C9A84C",
-              "mainSeriesProperties.lineStyle.linewidth":2,
-              "mainSeriesProperties.candleStyle.upColor":"#C9A84C",
-              "mainSeriesProperties.candleStyle.downColor":"#e05252"
-            },
-            studies_overrides:{
-              "compare.plot.color.0":"#60a5fa",
-              "compare.plot.color.1":"#a78bfa",
-              "compare.plot.color.2":"#34d399"
-            }
+            backgroundColor:"rgba(9,9,18,1)"
           });
           const srcDoc = [
             "<!DOCTYPE html><html><head>",
-            "<style>*{margin:0;padding:0}html,body{background:#090912;height:100%;overflow:hidden}#tv_perf{height:100%}</style>",
+            "<style>*{margin:0;padding:0}html,body{background:#090912;height:100%;overflow:hidden}.tradingview-widget-container,.tradingview-widget-container__widget{height:100%;width:100%}</style>",
             "</head><body>",
-            "<div id='tv_perf'></div>",
-            "<script src='https://s3.tradingview.com/tv.js'></scr"+"ipt>",
-            "<script>new TradingView.widget("+widgetConfig+");</scr"+"ipt>",
+            "<div class='tradingview-widget-container'>",
+            "<div class='tradingview-widget-container__widget'></div>",
+            "<script type='text/javascript' src='https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js' async>",
+            widgetJson,
+            "</scr"+"ipt>",
+            "</div>",
             "</body></html>"
           ].join("");
           return (
